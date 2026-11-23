@@ -42,7 +42,7 @@
     </style>
 </head>
 <body class="text-slate-800 p-4 md:p-6 min-h-screen font-sans">
-    <div id="app" v-cloak class="max-w-[1600px] mx-auto space-y-6">
+    <div id="app" v-cloak class="max-w-[1640px] mx-auto space-y-6">
 
         <!-- Top Header & Global Controls -->
         <div class="bg-white p-6 rounded-2xl elegant-shadow border border-[#EAE6DF] flex flex-wrap justify-between items-center gap-6 border-t-4 border-t-[#1F4E3D]">
@@ -195,7 +195,7 @@
                 </div>
 
                 <div class="overflow-x-auto">
-                    <table class="w-full text-left border-collapse min-w-[1320px]">
+                    <table class="w-full text-left border-collapse min-w-[1360px]">
                         <thead>
                             <tr class="bg-[#FDFBF7] text-[#8B7355] text-[10px] uppercase tracking-widest border-b-2 border-[#EAE6DF]">
                                 <th class="p-3 w-8 text-center">#</th>
@@ -209,8 +209,9 @@
                                 <th v-if="supplier === 'jacme'" class="p-3 w-20 text-center">Wt/Pack(g)</th>
                                 <th v-if="supplier === 'jacme'" class="p-3 w-20 text-center">Packets</th>
 
-                                <!-- Smart Global Columns (Bags by piece & weight, no cartons) -->
+                                <!-- Smart Global Columns -->
                                 <th v-if="supplier === 'smart'" class="p-3 w-24 text-center">Qty (Bags)</th>
+                                <th v-if="supplier === 'smart'" class="p-3 w-24 text-center">Bag Size(kg)</th>
 
                                 <th class="p-3 w-24 text-center">Net Wt(kg)</th>
                                 <th class="p-3 w-24 text-center bg-[#F4F1EB] text-[#213955]">Wt/Pc (kg)</th>
@@ -226,7 +227,7 @@
                         </thead>
                         <tbody class="divide-y divide-[#EAE6DF] text-sm">
                             <tr v-if="items.length === 0">
-                                <td colspan="15" class="p-12 text-center text-slate-400 text-sm font-medium">No lines loaded. Import an invoice to begin.</td>
+                                <td colspan="16" class="p-12 text-center text-slate-400 text-sm font-medium">No lines loaded. Import an invoice to begin.</td>
                             </tr>
                             <tr v-for="(item, index) in items" :key="item.id" class="hover:bg-[#FCFAF8] transition group">
                                 <td class="p-2 text-center text-xs text-slate-400 font-bold">{{ index + 1 }}</td>
@@ -247,8 +248,9 @@
                                 <td v-if="supplier === 'jacme'" class="p-2"><input type="number" v-model.number="item.jacmeWtPack" class="input-field text-center text-xs font-semibold p-1"></td>
                                 <td v-if="supplier === 'jacme'" class="p-2"><input type="number" v-model.number="item.jacmePackets" class="input-field text-center text-xs font-semibold p-1"></td>
 
-                                <!-- Smart Global Inputs (Piece / Bag count) -->
+                                <!-- Smart Global Inputs -->
                                 <td v-if="supplier === 'smart'" class="p-2"><input type="number" v-model.number="item.smartQty" class="input-field text-center text-xs font-semibold p-1"></td>
+                                <td v-if="supplier === 'smart'" class="p-2"><input type="number" step="0.01" v-model.number="item.smartBagSize" class="input-field text-center text-xs font-semibold p-1"></td>
 
                                 <!-- Net Weight -->
                                 <td class="p-2">
@@ -361,6 +363,7 @@
                             jacmeWtPack: 400,
                             jacmePackets: 960,
                             smartQty: 50,
+                            smartBagSize: 26,
                             smartNetWt: 1300,
                             lineTotalUSD: 2346.00,
                             targetGp: 0.15,
@@ -421,6 +424,7 @@
                         jacmeWtPack: 0,
                         jacmePackets: 0,
                         smartQty: 0,
+                        smartBagSize: 0,
                         smartNetWt: 0,
                         lineTotalUSD: 0,
                         targetGp: this.globalTargetGp,
@@ -435,7 +439,11 @@
                 // --- WEIGHT & COST CALCULATIONS ---
                 getItemWeight(item) {
                     if (this.supplier === 'naz') return parseFloat(item.nazNetWt) || 0;
-                    if (this.supplier === 'smart') return parseFloat(item.smartNetWt) || 0;
+                    if (this.supplier === 'smart') {
+                        const net = parseFloat(item.smartNetWt) || 0;
+                        if (net > 0) return net;
+                        return (parseFloat(item.smartQty) || 0) * (parseFloat(item.smartBagSize) || 0);
+                    }
                     return ((parseFloat(item.jacmeWtPack) || 0) * (parseFloat(item.jacmePackets) || 0)) / 1000;
                 },
                 getItemPieces(item) {
@@ -444,10 +452,9 @@
                     return parseFloat(item.jacmePackets) || 0;
                 },
                 getUnitWeight(item) {
-                    // Calculated backwards from total Net Weight / total pieces
                     const w = this.getItemWeight(item);
                     const p = this.getItemPieces(item);
-                    return p > 0 ? (w / p) : 0;
+                    return p > 0 ? (w / p) : (parseFloat(item.smartBagSize) || 0);
                 },
                 getUnitLandedCost(item) {
                     const weight = this.getItemWeight(item);
@@ -457,7 +464,7 @@
 
                     if (pieces <= 0) return 0;
 
-                    // Work backwards from Line Total USD -> NZD + weight-allocated extras / pieces
+                    // Work backwards from Total USD -> NZD + weight-allocated extras / Total Pieces
                     const lineNZD = lineUSD / r;
                     const allocatedExtra = this.totalShipmentWeight > 0
                         ? this.totalExtraCostsNZD * (weight / this.totalShipmentWeight)
@@ -697,6 +704,7 @@
                                 jacmeWtPack: 0,
                                 jacmePackets: 0,
                                 smartQty: 0,
+                                smartBagSize: 0,
                                 smartNetWt: 0,
                                 lineTotalUSD: usd,
                                 targetGp: this.globalTargetGp,
@@ -793,64 +801,64 @@
                     }
                 },
 
-                // --- 3. SMART GLOBAL VENTURES PDF PARSER (Rice Bags: Piece + Net Weight) ---
+                // --- 3. SMART GLOBAL VENTURES PDF PARSER ---
                 parseSmartGlobalLines(structuredRows, lines) {
                     const parsed = [];
 
-                    // Method A: Coordinate-aware parsing for native digital PDFs (like PI-2711001.pdf)
+                    // Coordinate-aware extraction using exact column left edges
                     if (structuredRows.length > 0) {
-                        // Find column X positions from the header row if present
-                        let colX = { descMin: 170, qtyMax: 355, bagSizeMax: 400, netWtMax: 435, rateMax: 470 };
+                        let bounds = { descStart: 170, qtyStart: 298, sizeStart: 345, netStart: 392, rateStart: 429, totStart: 462 };
                         for (const cells of structuredRows) {
                             const joined = cells.map(c => c.str.toUpperCase()).join(' ');
                             if (joined.includes('QUANTITY') && joined.includes('TOTAL')) {
-                                const descCell = cells.find(c => c.str.toUpperCase().includes('DESCRIPTION'));
+                                const hsCell = cells.find(c => c.str.toUpperCase().includes('CODE') || c.str.toUpperCase() === 'HS');
                                 const qtyCell = cells.find(c => c.str.toUpperCase().includes('QUANTITY'));
                                 const sizeCell = cells.find(c => c.str.toUpperCase().includes('BAGS') || c.str.toUpperCase().includes('SIZE'));
                                 const netCell = cells.find(c => c.str.toUpperCase().includes('NETT') || c.str.toUpperCase().includes('WT(KG)'));
                                 const rateCell = cells.find(c => c.str.toUpperCase().includes('RATE'));
                                 const totCell = cells.find(c => c.str.toUpperCase().includes('TOTAL'));
 
-                                if (descCell) colX.descMin = descCell.x - 30;
-                                if (qtyCell && sizeCell) colX.qtyMax = (qtyCell.x + sizeCell.x) / 2 + 15;
-                                if (sizeCell && netCell) colX.bagSizeMax = (sizeCell.x + netCell.x) / 2 + 8;
-                                if (netCell && rateCell) colX.netWtMax = (netCell.x + rateCell.x) / 2 + 5;
-                                if (rateCell && totCell) colX.rateMax = (rateCell.x + totCell.x) / 2 + 5;
+                                if (hsCell) bounds.descStart = hsCell.x + 25;
+                                if (qtyCell) bounds.qtyStart = qtyCell.x - 2;
+                                if (sizeCell) bounds.sizeStart = sizeCell.x - 2;
+                                if (netCell) bounds.netStart = netCell.x - 2;
+                                if (rateCell) bounds.rateStart = rateCell.x - 2;
+                                if (totCell) bounds.totStart = totCell.x - 5;
                                 break;
                             }
                         }
 
                         for (const cells of structuredRows) {
-                            const rowText = cells.map(c => c.str).join(' ');
-                            const upper = rowText.toUpperCase();
+                            const upper = cells.map(c => c.str).join(' ').toUpperCase();
                             if (upper.includes('TOTAL') || upper.includes('DESCRIPTION') || upper.includes('EXCHANGE RATE')) continue;
 
-                            // Must contain an 8-digit HS Code (e.g. 10063010) to confirm it's an item row
-                            const hasHsCode = cells.some(c => /^\d{6,8}$/.test(c.str.trim()) && c.x < colX.descMin);
+                            // Confirm row starts with HS Code (6-8 digits) before Description column
+                            const hasHsCode = cells.some(c => /^\d{6,8}$/.test(c.str.trim()) && c.x < bounds.descStart);
                             if (!hasHsCode) continue;
 
                             const descParts = [];
                             let qty = 0, bagSize = 0, netWt = 0, totalUsd = 0;
 
                             for (const c of cells) {
-                                if (c.x < colX.descMin) continue; // skip SNO & HS CODE
-                                const cleanNum = parseFloat(c.str.replace(/[$,]/g, ''));
+                                if (c.x < bounds.descStart) continue;
+                                const num = parseFloat(c.str.replace(/[$,]/g, ''));
 
-                                if (c.x < colX.qtyMax - 35) {
+                                if (c.x < bounds.qtyStart) {
                                     descParts.push(c.str);
-                                } else if (c.x < colX.qtyMax && !isNaN(cleanNum)) {
-                                    qty = cleanNum;
-                                } else if (c.x < colX.bagSizeMax && !isNaN(cleanNum)) {
-                                    bagSize = cleanNum;
-                                } else if (c.x < colX.netWtMax && !isNaN(cleanNum)) {
-                                    netWt = cleanNum;
-                                } else if (c.x >= colX.rateMax && !isNaN(cleanNum)) {
-                                    totalUsd = cleanNum;
+                                } else if (c.x < bounds.sizeStart && !isNaN(num)) {
+                                    qty = num;
+                                } else if (c.x < bounds.netStart && !isNaN(num)) {
+                                    bagSize = num;
+                                } else if (c.x < bounds.rateStart && !isNaN(num)) {
+                                    netWt = num;
+                                } else if (c.x >= bounds.totStart && !isNaN(num)) {
+                                    totalUsd = num;
                                 }
                             }
 
                             const name = descParts.join(' ').trim();
                             if (!netWt && qty > 0 && bagSize > 0) netWt = qty * bagSize;
+                            if (!bagSize && qty > 0 && netWt > 0) bagSize = netWt / qty;
 
                             if (name && (qty > 0 || totalUsd > 0)) {
                                 parsed.push({
@@ -862,6 +870,7 @@
                                     jacmeWtPack: 0,
                                     jacmePackets: 0,
                                     smartQty: qty,
+                                    smartBagSize: bagSize,
                                     smartNetWt: netWt,
                                     lineTotalUSD: parseFloat(totalUsd.toFixed(2)),
                                     targetGp: this.globalTargetGp,
@@ -872,22 +881,22 @@
                         }
                     }
 
-                    // Method B: Regex fallback on text lines (for OCR / scanned Smart Global PDFs)
+                    // Regex fallback on text lines (for OCR / scanned PDFs)
                     if (parsed.length === 0) {
                         for (const raw of lines) {
                             const upper = raw.toUpperCase();
                             if (upper.includes('TOTAL') || upper.includes('DESCRIPTION') || upper.includes('BANK')) continue;
 
-                            // Matches: [Optional SNO] [HS Code 6-8 digits] [Product Name] [Qty] [BagSize] [NetWt] [Rate] [TotalUSD]
                             const m = raw.match(/^(?:\d+\s+)?(\d{6,8})\s+(.+?)\s+([\d,]+)\s+(\d+(?:\.\d+)?)\s+([\d,]+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+\$?([\d,]+(?:\.\d+)?)$/);
                             if (!m) continue;
 
                             const name = m[2].trim();
                             const qty = parseFloat(m[3].replace(/,/g, '')) || 0;
-                            const bagSize = parseFloat(m[4]) || 0;
+                            let bagSize = parseFloat(m[4]) || 0;
                             let netWt = parseFloat(m[5].replace(/,/g, '')) || 0;
                             const totalUsd = parseFloat(m[7].replace(/,/g, '')) || 0;
                             if (!netWt && qty > 0 && bagSize > 0) netWt = qty * bagSize;
+                            if (!bagSize && qty > 0 && netWt > 0) bagSize = netWt / qty;
 
                             parsed.push({
                                 id: this.nextId++,
@@ -898,6 +907,7 @@
                                 jacmeWtPack: 0,
                                 jacmePackets: 0,
                                 smartQty: qty,
+                                smartBagSize: bagSize,
                                 smartNetWt: netWt,
                                 lineTotalUSD: parseFloat(totalUsd.toFixed(2)),
                                 targetGp: this.globalTargetGp,
@@ -909,7 +919,7 @@
 
                     if (!parsed.length) throw new Error('Could not parse items from Smart Global PDF.');
                     this.items = parsed;
-                    this.parseMessage = `Extracted ${parsed.length} rice bag items from Smart Global (15% GP applied).`;
+                    this.parseMessage = `Extracted ${parsed.length} items from Smart Global (15% GP applied).`;
                 },
 
                 // --- 2. JACME AGRO PDF PARSER ---
@@ -968,6 +978,7 @@
                                 jacmeWtPack: grams,
                                 jacmePackets: pkts,
                                 smartQty: 0,
+                                smartBagSize: 0,
                                 smartNetWt: 0,
                                 lineTotalUSD: parseFloat(lineUsd.toFixed(2)),
                                 targetGp: this.globalTargetGp,
