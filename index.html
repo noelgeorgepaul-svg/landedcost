@@ -15,7 +15,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <!-- SheetJS for Excel (Primary: cdnjs, Fallback: SheetJS CDN) -->
+    <!-- SheetJS for Excel -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script>
         if (!window.XLSX) {
@@ -52,10 +52,10 @@
 </head>
 <body class="text-slate-800 p-4 md:p-6 min-h-screen font-sans">
 
-    <!-- Visible Startup / Error Fallback Banner (hidden automatically once Vue mounts) -->
+    <!-- Startup Fallback Banner -->
     <div id="startup-banner" style="max-width: 680px; margin: 60px auto; padding: 24px; background: #ffffff; border: 1px solid #EAE6DF; border-top: 4px solid #1F4E3D; border-radius: 14px; font-family: sans-serif; text-align: center;">
         <h2 style="margin: 0 0 8px; color: #1F4E3D; font-size: 20px;">Loading Landed Cost Portal...</h2>
-        <p id="startup-msg" style="margin: 0; color: #64748b; font-size: 14px;">Initializing libraries. If this message stays on screen, check your internet connection or ensure the file was saved as Plain Text HTML.</p>
+        <p id="startup-msg" style="margin: 0; color: #64748b; font-size: 14px;">Initializing libraries...</p>
     </div>
 
     <div id="app" style="display: none;" class="max-w-[1640px] mx-auto space-y-6">
@@ -760,6 +760,107 @@
                         return m ? parseInt(m[1], 10) : 1;
                     },
 
+                    // --- CANVAS PREPROCESSOR FOR GRIDDED / HIGHLIGHTED PDF TABLES (JACME) ---
+                    preprocessTableCanvas(srcCanvas) {
+                        const w = srcCanvas.width;
+                        const h = srcCanvas.height;
+                        const srcCtx = srcCanvas.getContext('2d');
+                        const imgData = srcCtx.getImageData(0, 0, w, h);
+                        const d = imgData.data;
+
+                        // Detect green header band (e.g. JACME header bar: R < 65, G > 135, B < 100) in upper 35% of page
+                        let gMinX = w, gMaxX = 0, gMaxY = 0, gCount = 0;
+                        const scanMaxY = Math.floor(h * 0.35);
+                        for (let y = Math.floor(h * 0.12); y < scanMaxY; y++) {
+                            let rowGreen = 0;
+                            for (let x = 0; x < w; x++) {
+                                const idx = (y * w + x) * 4;
+                                if (d[idx] < 65 && d[idx + 1] > 135 && d[idx + 2] < 100) {
+                                    rowGreen++;
+                                    if (x < gMinX) gMinX = x;
+                                    if (x > gMaxX) gMaxX = x;
+                                }
+                            }
+                            if (rowGreen > w * 0.25) {
+                                gCount++;
+                                if (y > gMaxY) gMaxY = y;
+                            }
+                        }
+
+                        // Crop tightly to the table if green header detected; otherwise trim outer margins
+                        let cropX = 0, cropY = 0, cropW = w, cropH = h;
+                        if (gCount > 5 && gMaxX > gMinX + w * 0.25) {
+                            cropX = Math.max(0, gMinX - 12);
+                            cropW = Math.min(w - cropX, (gMaxX - gMinX) + 24);
+                            cropY = Math.max(0, gMaxY + 2);
+                            cropH = Math.min(h - cropY, Math.floor(h * 0.84) - cropY);
+                        }
+
+                        const outCanvas = document.createElement('canvas');
+                        outCanvas.width = cropW;
+                        outCanvas.height = cropH;
+                        const outCtx = outCanvas.getContext('2d');
+                        const outImg = outCtx.createImageData(cropW, cropH);
+                        const od = outImg.data;
+
+                        // Step 1: Binarize — keep dark neutral text as black (#000), turn all neon highlights & backgrounds to white (#FFF)
+                        const binary = new Uint8Array(cropW * cropH);
+                        for (let y = 0; y < cropH; y++) {
+                            for (let x = 0; x < cropW; x++) {
+                                const sIdx = ((cropY + y) * w + (cropX + x)) * 4;
+                                const r = d[sIdx], g = d[sIdx + 1], b = d[sIdx + 2];
+                                const maxC = Math.max(r, g, b);
+                                const minC = Math.min(r, g, b);
+                                const isInk = (r < 135 && g < 135 && b < 135 && (maxC - minC) < 75) ? 1 : 0;
+                                binary[y * cropW + x] = isInk;
+                            }
+                        }
+
+                        // Step 2: Erase vertical grid lines (columns where > 55% of rows are ink)
+                        for (let x = 0; x < cropW; x++) {
+                            let colInk = 0;
+                            for (let y = 0; y < cropH; y++) {
+                                colInk += binary[y * cropW + x];
+                            }
+                            if (colInk / cropH > 0.55) {
+                                for (let dx = -1; dx <= 1; dx++) {
+                                    const tx = x + dx;
+                                    if (tx >= 0 && tx < cropW) {
+                                        for (let y = 0; y < cropH; y++) binary[y * cropW + tx] = 0;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Step 3: Erase horizontal grid lines (rows where > 45% of columns are ink)
+                        for (let y = 0; y < cropH; y++) {
+                            let rowInk = 0;
+                            for (let x = 0; x < cropW; x++) {
+                                rowInk += binary[y * cropW + x];
+                            }
+                            if (rowInk / cropW > 0.45) {
+                                for (let dy = -1; dy <= 1; dy++) {
+                                    const ty = y + dy;
+                                    if (ty >= 0 && ty < cropH) {
+                                        for (let x = 0; x < cropW; x++) binary[ty * cropW + x] = 0;
+                                    }
+                                }
+                            }
+                        }
+
+                        // Write clean black-on-white pixels
+                        for (let i = 0; i < cropW * cropH; i++) {
+                            const val = binary[i] ? 0 : 255;
+                            const p = i * 4;
+                            od[p] = val;
+                            od[p + 1] = val;
+                            od[p + 2] = val;
+                            od[p + 3] = 255;
+                        }
+                        outCtx.putImageData(outImg, 0, 0);
+                        return outCanvas;
+                    },
+
                     // --- 2 & 3. UNIFIED PDF ROUTER ---
                     async parsePdfAuto(file) {
                         if (!window.pdfjsLib) throw new Error('PDF parser library not loaded. Check internet connection.');
@@ -792,21 +893,25 @@
                             }
                         }
 
+                        // Scanned / Vector-Printed PDF (no selectable text layer -> Clean & OCR)
                         if (lines.length < 5) {
                             if (!window.Tesseract) throw new Error('OCR library not loaded for scanned PDF.');
                             lines = [];
                             structuredRows = [];
                             for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-                                this.parseStatus = `Running OCR on page ${pageNum} of ${pdf.numPages}...`;
+                                this.parseStatus = `Cleaning & OCR scanning page ${pageNum} of ${pdf.numPages}...`;
                                 const page = await pdf.getPage(pageNum);
-                                const viewport = page.getViewport({ scale: 3.0 });
-                                const canvas = document.createElement('canvas');
-                                canvas.width = viewport.width;
-                                canvas.height = viewport.height;
-                                const ctx = canvas.getContext('2d');
+                                const viewport = page.getViewport({ scale: 3.5 });
+                                const rawCanvas = document.createElement('canvas');
+                                rawCanvas.width = viewport.width;
+                                rawCanvas.height = viewport.height;
+                                const ctx = rawCanvas.getContext('2d');
                                 await page.render({ canvasContext: ctx, viewport }).promise;
 
-                                const result = await Tesseract.recognize(canvas, 'eng', {
+                                const cleanCanvas = this.preprocessTableCanvas(rawCanvas);
+
+                                const result = await Tesseract.recognize(cleanCanvas, 'eng', {
+                                    tessedit_pageseg_mode: '6',
                                     logger: m => {
                                         if (m.status === 'recognizing text') {
                                             const base = ((pageNum - 1) / pdf.numPages) * 80 + 15;
@@ -814,7 +919,29 @@
                                         }
                                     }
                                 });
-                                lines.push(...result.data.text.split('\n').map(l => l.trim()).filter(Boolean));
+
+                                // Reconstruct horizontal rows from word bounding boxes for maximum row alignment
+                                if (result.data && Array.isArray(result.data.words) && result.data.words.length > 0) {
+                                    const wordRows = [];
+                                    for (const w of result.data.words) {
+                                        const txt = (w.text || '').replace(/\|/g, '').trim();
+                                        if (!txt) continue;
+                                        const yMid = (w.bbox.y0 + w.bbox.y1) / 2;
+                                        let r = wordRows.find(row => Math.abs(row.y - yMid) < 12);
+                                        if (!r) {
+                                            r = { y: yMid, words: [] };
+                                            wordRows.push(r);
+                                        }
+                                        r.words.push({ x: w.bbox.x0, text: txt });
+                                    }
+                                    wordRows.sort((a, b) => a.y - b.y);
+                                    for (const r of wordRows) {
+                                        r.words.sort((a, b) => a.x - b.x);
+                                        lines.push(r.words.map(w => w.text).join(' '));
+                                    }
+                                } else {
+                                    lines.push(...result.data.text.split('\n').map(l => l.replace(/\|/g, ' ').trim()).filter(Boolean));
+                                }
                             }
                         }
 
@@ -824,7 +951,9 @@
                             fullTextUpper.includes('BAGS SIZE');
                         const isJacme = fullTextUpper.includes('JACME') ||
                             fullTextUpper.includes('WT/PACK') ||
-                            fullTextUpper.includes('PACK/CARTON');
+                            fullTextUpper.includes('PACK/CARTON') ||
+                            fullTextUpper.includes('HAND GRATED COCONUT') ||
+                            fullTextUpper.includes('RESTAURANT POROTTA');
 
                         if (isSmartGlobal) {
                             this.supplier = 'smart';
@@ -967,22 +1096,27 @@
                         const skips = ['JACME', 'NANDI ESTATE', 'GSTIN', 'DETAILED INVOICE', 'DESCRIPTION OF GOODS', 'BANK DETAILS', 'ACCOUNT NAME', 'A/C NUMBER', 'BANK NAME', 'BRANCH NAME', 'IFSC CODE', 'SWIFT CODE', 'PRICES MENTIONED', 'TOTAL AMOUNT', 'FINAL INVOICE', 'TERMS OF PAYMENT', 'DISPATCHED THROUGH', 'RIVER VIEW ROAD', 'SHYER LIMITED'];
 
                         for (const raw of lines) {
-                            if (skips.some(k => raw.toUpperCase().includes(k))) continue;
-                            if (!/[\d.,]+\s*\$|\$\s*[\d.,]+/.test(raw)) continue;
+                            const cleanedLine = raw.replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
+                            if (!cleanedLine || skips.some(k => cleanedLine.toUpperCase().includes(k))) continue;
 
-                            const match = raw.match(/^(?:\d+\s+)?([A-Za-z][A-Za-z0-9\s().+\-\/]+?)\s+(\d{2,4})\s+(.+)$/);
+                            // Match: [Optional SL NO] [Product Name] [Wt/Pack Grams: 2-4 digits] [Remaining numeric columns]
+                            const match = cleanedLine.match(/^(?:\d{1,2}\s+)?([A-Za-zГ][A-Za-z0-9\s().+\-\/&]+?)\s+(\d{2,4})\s+(.+)$/);
                             if (!match) continue;
 
                             let name = match[1].trim();
-                            if (/^ozen\s+/i.test(name)) name = 'Fr' + name;
+                            // Repair leading "Frozen" if vertical border erasure clipped the 'F'
+                            name = name.replace(/^(?:Гrozen|Trozer|lrozen|rozen)\b/i, 'Frozen');
 
                             let grams = parseInt(match[2], 10);
                             if (/1\s*kg/i.test(name)) grams = 1000;
                             if (/2\s*kg/i.test(name)) grams = 2000;
 
-                            const curTokens = [...match[3].matchAll(/\$?\s*(\d[\d,.]*)\s*\$?/g)].map(m => m[0].trim());
+                            const rest = match[3];
+                            const tokens = [...rest.matchAll(/\$?\s*(\d[\d,.]*)\s*\$?/g)].map(m => m[0].trim());
                             const dVals = [], iVals = [];
-                            for (const tok of curTokens) {
+
+                            for (const tok of tokens) {
+                                const hasDollar = tok.includes('$');
                                 let cleaned = tok.replace(/\$/g, '').replace(/,/g, '').trim();
                                 const dots = (cleaned.match(/\./g) || []).length;
                                 if (dots > 1) {
@@ -992,17 +1126,28 @@
                                 }
                                 const num = parseFloat(cleaned);
                                 if (isNaN(num)) continue;
-                                if (tok.includes('$') || cleaned.includes('.')) dVals.push(num);
+                                if (hasDollar || cleaned.includes('.')) dVals.push(num);
                                 else iVals.push(Math.round(num));
                             }
                             if (dVals.length === 0) continue;
 
                             let lineUsd = dVals[dVals.length - 1];
-                            let pkts = iVals.length >= 3 ? iVals[iVals.length - 1] : (iVals.length === 2 ? iVals[1] : (iVals.length === 1 ? iVals[0] : 0));
+                            let pkts = 0;
+                            if (iVals.length >= 3) {
+                                // [Pack/Carton, No of Cartons, No. Packets]
+                                pkts = iVals[iVals.length - 1];
+                            } else if (iVals.length === 2) {
+                                // Either [Pack/Carton, No. Packets] or [Pack/Carton, No of Cartons]
+                                pkts = iVals[1] >= iVals[0] ? iVals[1] : (iVals[0] * iVals[1]);
+                            } else if (iVals.length === 1) {
+                                pkts = iVals[0];
+                            }
 
+                            // Fix missing decimal point in Total Amount if OCR dropped '.' (e.g. $69760 -> 697.60)
                             if (pkts > 0 && dVals.length >= 2) {
-                                const expected = pkts * dVals[dVals.length - 2];
-                                if (lineUsd > expected * 20 && Math.abs((lineUsd / 100) - expected) / expected < 0.05) {
+                                const unitPrice = dVals[dVals.length - 2];
+                                const expected = pkts * unitPrice;
+                                if (expected > 0 && lineUsd > expected * 20 && Math.abs((lineUsd / 100) - expected) / expected < 0.08) {
                                     lineUsd = lineUsd / 100;
                                 }
                             }
@@ -1033,7 +1178,6 @@
                 }
             }).mount('#app');
 
-            // Hide startup banner and show the mounted portal
             const banner = document.getElementById('startup-banner');
             const appEl = document.getElementById('app');
             if (banner) banner.style.display = 'none';
