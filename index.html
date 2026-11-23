@@ -221,7 +221,7 @@
                                 <th v-if="supplier === 'naz'" class="p-2.5 w-16 text-center">Pcs/Ctn</th>
                                 <th v-if="supplier === 'naz'" class="p-2.5 w-16 text-center">Ctns</th>
 
-                                <!-- JACME Columns (Wt/Pack in g, Pack/Carton, No of Cartons) -->
+                                <!-- JACME Columns -->
                                 <th v-if="supplier === 'jacme'" class="p-2.5 w-20 text-center">Wt/Pack(g)</th>
                                 <th v-if="supplier === 'jacme'" class="p-2.5 w-16 text-center">Pack/Ctn</th>
                                 <th v-if="supplier === 'jacme'" class="p-2.5 w-16 text-center">Cartons</th>
@@ -480,7 +480,6 @@
                             const sz = parseFloat(item.smartBagSize) || 0;
                             return (net > 0 && sz > 0) ? Math.round(net / sz) : 0;
                         }
-                        // JACME: Pack/Carton * No of Cartons (with fallback to jacmePackets if cartons not entered)
                         const packCtn = parseFloat(item.jacmePackCtn) || 0;
                         const ctns = parseFloat(item.jacmeCtns) || 0;
                         if (packCtn > 0 && ctns > 0) return packCtn * ctns;
@@ -493,7 +492,6 @@
                             if (net > 0) return net;
                             return (parseFloat(item.smartQty) || 0) * (parseFloat(item.smartBagSize) || 0);
                         }
-                        // JACME: Wt/Pack (grams) * Total Pieces / 1000
                         const grams = parseFloat(item.jacmeWtPack) || 0;
                         const pieces = this.getItemPieces(item);
                         return (grams * pieces) / 1000;
@@ -514,7 +512,6 @@
 
                         if (pieces <= 0) return 0;
 
-                        // Work backwards from Total Line Amount (USD) -> NZD + weight-allocated extras / Total Pieces
                         const lineNZD = lineUSD / r;
                         const allocatedExtra = this.totalShipmentWeight > 0
                             ? this.totalExtraCostsNZD * (weight / this.totalShipmentWeight)
@@ -781,15 +778,15 @@
                         return m ? parseInt(m[1], 10) : 1;
                     },
 
-                    // --- CANVAS PREPROCESSOR FOR GRIDDED / HIGHLIGHTED PDF TABLES (JACME) ---
-                    preprocessTableCanvas(srcCanvas) {
+                    // --- CELL-LEVEL GRID EXTRACTOR FOR JACME PDF ---
+                    extractGridCellsFromCanvas(srcCanvas) {
                         const w = srcCanvas.width;
                         const h = srcCanvas.height;
                         const srcCtx = srcCanvas.getContext('2d');
                         const imgData = srcCtx.getImageData(0, 0, w, h);
                         const d = imgData.data;
 
-                        // Detect green header band (JACME header bar) in upper 35% of page
+                        // 1. Detect green header bar in upper 35% of page
                         let gMinX = w, gMaxX = 0, gMaxY = 0, gCount = 0;
                         const scanMaxY = Math.floor(h * 0.35);
                         for (let y = Math.floor(h * 0.12); y < scanMaxY; y++) {
@@ -808,22 +805,16 @@
                             }
                         }
 
-                        let cropX = 0, cropY = 0, cropW = w, cropH = h;
-                        if (gCount > 5 && gMaxX > gMinX + w * 0.25) {
-                            cropX = Math.max(0, gMinX - 8);
-                            cropW = Math.min(w - cropX, (gMaxX - gMinX) + 16);
-                            cropY = Math.max(0, gMaxY + 2);
-                            cropH = Math.min(h - cropY, Math.floor(h * 0.84) - cropY);
+                        if (gCount <= 5 || gMaxX <= gMinX + w * 0.25) {
+                            return null;
                         }
 
-                        const outCanvas = document.createElement('canvas');
-                        outCanvas.width = cropW;
-                        outCanvas.height = cropH;
-                        const outCtx = outCanvas.getContext('2d');
-                        const outImg = outCtx.createImageData(cropW, cropH);
-                        const od = outImg.data;
+                        const cropX = Math.max(0, gMinX - 8);
+                        const cropW = Math.min(w - cropX, (gMaxX - gMinX) + 16);
+                        const cropY = Math.max(0, gMaxY + 2);
+                        const cropH = Math.min(h - cropY, Math.floor(h * 0.80) - cropY);
 
-                        // Step 1: Binarize — keep dark neutral text as black (1), turn all neon highlights & backgrounds to white (0)
+                        // 2. Binarize: keep dark neutral ink as 1, strip all colored highlights & backgrounds to 0
                         const binary = new Uint8Array(cropW * cropH);
                         for (let y = 0; y < cropH; y++) {
                             for (let x = 0; x < cropW; x++) {
@@ -835,17 +826,13 @@
                             }
                         }
 
-                        // Step 2: Detect vertical grid line X-coordinates BEFORE erasing them
+                        // 3. Detect the 10 vertical grid divider lines
                         const rawVCols = [];
                         for (let x = 0; x < cropW; x++) {
                             let colInk = 0;
                             for (let y = 0; y < cropH; y++) colInk += binary[y * cropW + x];
-                            if (colInk / cropH > 0.50) {
-                                rawVCols.push(x);
-                            }
+                            if (colInk / cropH > 0.50) rawVCols.push(x);
                         }
-
-                        // Cluster adjacent vertical grid pixels into distinct line X-positions
                         const vLines = [];
                         for (const x of rawVCols) {
                             if (vLines.length === 0 || x - vLines[vLines.length - 1].end > 6) {
@@ -854,49 +841,167 @@
                                 vLines[vLines.length - 1].end = x;
                             }
                         }
-                        const gridXs = vLines.map(v => Math.round((v.start + v.end) / 2));
-
-                        // Erase vertical grid lines from binary image so OCR doesn't read '|'
-                        for (const x of rawVCols) {
-                            for (let dx = -1; dx <= 1; dx++) {
-                                const tx = x + dx;
-                                if (tx >= 0 && tx < cropW) {
-                                    for (let y = 0; y < cropH; y++) binary[y * cropW + tx] = 0;
-                                }
-                            }
+                        let gridXs = vLines.map(v => Math.round((v.start + v.end) / 2));
+                        if (gridXs.length >= 10) {
+                            gridXs = gridXs.slice(-10);
+                        } else {
+                            const ratios = [0.006, 0.080, 0.405, 0.495, 0.570, 0.648, 0.742, 0.822, 0.903, 0.998];
+                            gridXs = ratios.map(r => Math.round(r * cropW));
                         }
 
-                        // Step 3: Erase horizontal grid lines
+                        // 4. Detect horizontal row grid lines (including dotted dividers)
+                        const rawHRows = [];
                         for (let y = 0; y < cropH; y++) {
                             let rowInk = 0;
                             for (let x = 0; x < cropW; x++) rowInk += binary[y * cropW + x];
-                            if (rowInk / cropW > 0.45) {
-                                for (let dy = -1; dy <= 1; dy++) {
-                                    const ty = y + dy;
-                                    if (ty >= 0 && ty < cropH) {
-                                        for (let x = 0; x < cropW; x++) binary[ty * cropW + x] = 0;
+                            if (rowInk / cropW > 0.18) rawHRows.push(y);
+                        }
+                        const hClusters = [];
+                        for (const y of rawHRows) {
+                            if (hClusters.length === 0 || y - hClusters[hClusters.length - 1].end > 4) {
+                                hClusters.push({ start: y, end: y });
+                            } else {
+                                hClusters[hClusters.length - 1].end = y;
+                            }
+                        }
+                        const rawYs = hClusters.map(c => Math.round((c.start + c.end) / 2));
+
+                        const diffs = [];
+                        for (let i = 1; i < rawYs.length; i++) {
+                            const dy = rawYs[i] - rawYs[i - 1];
+                            if (dy >= 20 && dy <= 55) diffs.push(dy);
+                        }
+                        diffs.sort((a, b) => a - b);
+                        const pitch = diffs.length > 0 ? diffs[Math.floor(diffs.length / 2)] : Math.round(cropW * 0.0207);
+
+                        const cleanYs = [];
+                        for (const y of rawYs) {
+                            if (cleanYs.length === 0 || (y - cleanYs[cleanYs.length - 1]) >= pitch * 0.65) {
+                                cleanYs.push(y);
+                            }
+                        }
+
+                        const allBands = [];
+                        for (let i = 0; i < cleanYs.length - 1; i++) {
+                            const yA = cleanYs[i];
+                            const yB = cleanYs[i + 1];
+                            const span = yB - yA;
+                            const subRows = Math.max(1, Math.round(span / pitch));
+                            if (subRows > 5) break;
+                            const step = span / subRows;
+                            for (let s = 0; s < subRows; s++) {
+                                const rTop = Math.round(yA + s * step);
+                                const rBot = Math.round(yA + (s + 1) * step);
+                                if (rBot - rTop > pitch * 1.45) break;
+                                allBands.push({ y0: rTop, y1: rBot });
+                            }
+                        }
+
+                        // Keep only active product rows (stop when hitting 2 consecutive blank rows below table)
+                        const rowBounds = [];
+                        let blankStreak = 0;
+                        const descX0 = gridXs[1] + 8;
+                        const descX1 = gridXs[2] - 8;
+                        for (const b of allBands) {
+                            let descInk = 0;
+                            for (let y = b.y0 + 3; y < b.y1 - 3; y++) {
+                                for (let x = descX0; x < descX1; x++) descInk += binary[y * cropW + x];
+                            }
+                            if (descInk > 35) {
+                                rowBounds.push(b);
+                                blankStreak = 0;
+                            } else if (rowBounds.length >= 5) {
+                                blankStreak++;
+                                if (blankStreak >= 2) break;
+                            }
+                        }
+
+                        return { binary, cropW, cropH, gridXs, rowBounds };
+                    },
+
+                    buildColumnStripCanvas(gridData, colIdx) {
+                        const { binary, cropW, gridXs, rowBounds } = gridData;
+                        const x0 = gridXs[colIdx] + 4;
+                        const x1 = gridXs[colIdx + 1] - 4;
+                        const cellW = Math.max(10, x1 - x0);
+
+                        const scale = 2.5;
+                        const slotH = 84;
+                        const padLeft = 28;
+                        const stripW = Math.round(cellW * scale) + padLeft * 2;
+                        const stripH = rowBounds.length * slotH;
+
+                        const canvas = document.createElement('canvas');
+                        canvas.width = stripW;
+                        canvas.height = stripH;
+                        const ctx = canvas.getContext('2d');
+                        ctx.fillStyle = '#FFFFFF';
+                        ctx.fillRect(0, 0, stripW, stripH);
+
+                        const imgData = ctx.getImageData(0, 0, stripW, stripH);
+                        const od = imgData.data;
+
+                        for (let r = 0; r < rowBounds.length; r++) {
+                            const y0 = rowBounds[r].y0 + 3;
+                            const y1 = rowBounds[r].y1 - 3;
+                            const cellH = Math.max(1, y1 - y0);
+                            const destTop = r * slotH + Math.max(6, Math.floor((slotH - cellH * scale) / 2));
+
+                            for (let sy = 0; sy < cellH; sy++) {
+                                for (let sx = 0; sx < cellW; sx++) {
+                                    if (binary[(y0 + sy) * cropW + (x0 + sx)]) {
+                                        const px0 = padLeft + Math.floor(sx * scale);
+                                        const px1 = padLeft + Math.ceil((sx + 1) * scale);
+                                        const py0 = destTop + Math.floor(sy * scale);
+                                        const py1 = destTop + Math.ceil((sy + 1) * scale);
+                                        for (let py = py0; py < py1 && py < stripH; py++) {
+                                            for (let px = px0; px < px1 && px < stripW; px++) {
+                                                const p = (py * stripW + px) * 4;
+                                                od[p] = 0;
+                                                od[p + 1] = 0;
+                                                od[p + 2] = 0;
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
 
-                        for (let i = 0; i < cropW * cropH; i++) {
-                            const val = binary[i] ? 0 : 255;
-                            const p = i * 4;
-                            od[p] = val;
-                            od[p + 1] = val;
-                            od[p + 2] = val;
-                            od[p + 3] = 255;
+                        ctx.putImageData(imgData, 0, 0);
+                        return { canvas, slotH };
+                    },
+
+                    async recognizeColumnStrip(worker, gridData, colIdx, whitelist) {
+                        const { canvas, slotH } = this.buildColumnStripCanvas(gridData, colIdx);
+                        await worker.setParameters({
+                            tessedit_pageseg_mode: '6',
+                            tessedit_char_whitelist: whitelist
+                        });
+                        const res = await worker.recognize(canvas);
+                        const rowTexts = Array.from({ length: gridData.rowBounds.length }, () => []);
+
+                        if (res.data && Array.isArray(res.data.words)) {
+                            for (const w of res.data.words) {
+                                const txt = (w.text || '').trim();
+                                if (!txt) continue;
+                                const yMid = (w.bbox.y0 + w.bbox.y1) / 2;
+                                const rIdx = Math.floor(yMid / slotH);
+                                if (rIdx >= 0 && rIdx < rowTexts.length) {
+                                    rowTexts[rIdx].push({ x: w.bbox.x0, text: txt });
+                                }
+                            }
                         }
-                        outCtx.putImageData(outImg, 0, 0);
-                        return { canvas: outCanvas, gridXs, cropW };
+                        return rowTexts.map(arr => {
+                            arr.sort((a, b) => a.x - b.x);
+                            return arr.map(item => item.text).join(' ').trim();
+                        });
                     },
 
                     // --- 2 & 3. UNIFIED PDF ROUTER ---
                     async parsePdfAuto(file) {
                         if (!window.pdfjsLib) throw new Error('PDF parser library not loaded. Check internet connection.');
                         this.parseStatus = 'Inspecting PDF...';
-                        this.parseProgress = 20;
+                        this.parseProgress = 15;
                         const buffer = await file.arrayBuffer();
                         const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
                         let structuredRows = [];
@@ -924,87 +1029,146 @@
                             }
                         }
 
-                        // Scanned / Vector-Printed PDF (no selectable text layer -> Clean & OCR)
-                        let ocrWordRows = [];
-                        let detectedGridXs = [];
-                        let detectedCropW = 0;
+                        // Digital PDF with selectable text -> Smart Global
+                        if (lines.length >= 5) {
+                            this.supplier = 'smart';
+                            this.parseSmartGlobalLines(structuredRows, lines);
+                            return;
+                        }
 
-                        if (lines.length < 5) {
-                            if (!window.Tesseract) throw new Error('OCR library not loaded for scanned PDF.');
-                            lines = [];
-                            structuredRows = [];
+                        // Vector-Printed / Image PDF -> Cell-Grid Column Strip OCR (JACME)
+                        if (!window.Tesseract) throw new Error('OCR library not loaded for scanned PDF.');
+                        this.supplier = 'jacme';
+                        this.parseStatus = 'Detecting invoice table grid...';
+                        this.parseProgress = 20;
+
+                        const worker = await Tesseract.createWorker('eng');
+                        const allParsed = [];
+
+                        try {
                             for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-                                this.parseStatus = `Cleaning & OCR scanning page ${pageNum} of ${pdf.numPages}...`;
                                 const page = await pdf.getPage(pageNum);
-                                const viewport = page.getViewport({ scale: 3.5 });
+                                const viewport = page.getViewport({ scale: 4.5 });
                                 const rawCanvas = document.createElement('canvas');
                                 rawCanvas.width = viewport.width;
                                 rawCanvas.height = viewport.height;
-                                const ctx = rawCanvas.getContext('2d');
-                                await page.render({ canvasContext: ctx, viewport }).promise;
+                                await page.render({ canvasContext: rawCanvas.getContext('2d'), viewport }).promise;
 
-                                const { canvas: cleanCanvas, gridXs, cropW } = this.preprocessTableCanvas(rawCanvas);
-                                if (pageNum === 1) {
-                                    detectedGridXs = gridXs;
-                                    detectedCropW = cropW;
+                                const gridData = this.extractGridCellsFromCanvas(rawCanvas);
+                                if (!gridData || gridData.rowBounds.length === 0) {
+                                    throw new Error('Could not detect invoice grid lines in PDF.');
                                 }
 
-                                const result = await Tesseract.recognize(cleanCanvas, 'eng', {
-                                    tessedit_pageseg_mode: '6',
-                                    logger: m => {
-                                        if (m.status === 'recognizing text') {
-                                            const base = ((pageNum - 1) / pdf.numPages) * 80 + 15;
-                                            this.parseProgress = Math.round(base + (m.progress * (80 / pdf.numPages)));
-                                        }
-                                    }
-                                });
+                                const colsToRead = [
+                                    { idx: 1, label: 'Product Names', whitelist: '' },
+                                    { idx: 2, label: 'Pack Weights', whitelist: '0123456789' },
+                                    { idx: 3, label: 'Pack/Carton', whitelist: '0123456789' },
+                                    { idx: 4, label: 'Cartons', whitelist: '0123456789' },
+                                    { idx: 6, label: 'Unit Prices', whitelist: '0123456789.$' },
+                                    { idx: 7, label: 'Packet Counts', whitelist: '0123456789,' },
+                                    { idx: 8, label: 'Line Totals', whitelist: '0123456789.$,' }
+                                ];
 
-                                if (result.data && Array.isArray(result.data.words) && result.data.words.length > 0) {
-                                    const wordRows = [];
-                                    for (const w of result.data.words) {
-                                        const txt = (w.text || '').replace(/\|/g, '').trim();
-                                        if (!txt) continue;
-                                        const yMid = (w.bbox.y0 + w.bbox.y1) / 2;
-                                        const xMid = (w.bbox.x0 + w.bbox.x1) / 2;
-                                        let r = wordRows.find(row => Math.abs(row.y - yMid) < 13);
-                                        if (!r) {
-                                            r = { y: yMid, words: [] };
-                                            wordRows.push(r);
-                                        }
-                                        r.words.push({ x: xMid, x0: w.bbox.x0, text: txt });
+                                const colResults = {};
+                                for (let c = 0; c < colsToRead.length; c++) {
+                                    const spec = colsToRead[c];
+                                    this.parseStatus = `Reading ${spec.label} (${c + 1}/${colsToRead.length})...`;
+                                    this.parseProgress = Math.round(25 + ((c + 1) / colsToRead.length) * 70);
+                                    colResults[spec.idx] = await this.recognizeColumnStrip(worker, gridData, spec.idx, spec.whitelist);
+                                }
+
+                                const pageItems = this.assembleJacmeItems(gridData.rowBounds.length, colResults);
+                                allParsed.push(...pageItems);
+                            }
+                        } finally {
+                            await worker.terminate();
+                        }
+
+                        if (!allParsed.length) throw new Error('Could not extract product rows from JACME PDF.');
+                        this.items = allParsed;
+                        this.parseProgress = 100;
+                        this.parseMessage = `Extracted ${allParsed.length} items from JACME (15% GP applied).`;
+                    },
+
+                    assembleJacmeItems(numRows, colResults) {
+                        const parsed = [];
+                        const skips = ['TOTAL AMOUNT', 'FINAL INVOICE', 'BANK DETAILS', 'ACCOUNT NAME', 'DESCRIPTION OF GOODS'];
+
+                        for (let r = 0; r < numRows; r++) {
+                            let name = (colResults[1][r] || '').replace(/\s+/g, ' ').trim();
+                            if (!name || skips.some(k => name.toUpperCase().includes(k))) continue;
+
+                            name = name.replace(/^(?:rozen|Frozer|Frozem)\b/i, 'Frozen');
+
+                            let wtPackG = parseInt((colResults[2][r] || '').replace(/[^\d]/g, ''), 10) || 0;
+                            let packCtn = parseInt((colResults[3][r] || '').replace(/[^\d]/g, ''), 10) || 0;
+                            let ctns = parseInt((colResults[4][r] || '').replace(/[^\d]/g, ''), 10) || 0;
+                            let pkts = parseInt((colResults[7][r] || '').replace(/[^\d]/g, ''), 10) || 0;
+
+                            let rawUnit = (colResults[6][r] || '').replace(/,/g, '').trim();
+                            if (/^50\.\d{2}$/.test(rawUnit)) rawUnit = rawUnit.slice(1);
+                            rawUnit = rawUnit.replace(/^\$+/, '');
+                            const unitUsd = parseFloat(rawUnit) || 0;
+
+                            let rawTot = (colResults[8][r] || '').replace(/,/g, '').trim();
+                            rawTot = rawTot.replace(/^\$+/, '');
+                            let totalUsd = parseFloat(rawTot) || 0;
+
+                            if (wtPackG === 0 && packCtn === 0 && ctns === 0 && pkts === 0 && totalUsd === 0) continue;
+
+                            if (/1\s*kg/i.test(name)) wtPackG = 1000;
+                            if (/2\s*kg/i.test(name)) wtPackG = 2000;
+
+                            if (packCtn > 0 && ctns > 0) {
+                                const prod = packCtn * ctns;
+                                if (pkts !== prod) {
+                                    if (pkts > 0 && unitUsd > 0 && Math.abs(pkts * unitUsd - totalUsd) < Math.max(3, totalUsd * 0.02)) {
+                                        ctns = Math.round(pkts / packCtn);
+                                    } else {
+                                        pkts = prod;
                                     }
-                                    wordRows.sort((a, b) => a.y - b.y);
-                                    for (const r of wordRows) {
-                                        r.words.sort((a, b) => a.x - b.x);
-                                        ocrWordRows.push(r.words);
-                                        lines.push(r.words.map(w => w.text).join(' '));
+                                }
+                            } else if (pkts > 0 && packCtn > 0 && ctns === 0) {
+                                ctns = Math.round(pkts / packCtn);
+                            } else if (pkts > 0 && ctns > 0 && packCtn === 0) {
+                                packCtn = Math.round(pkts / ctns);
+                            }
+
+                            if (pkts > 0 && unitUsd > 0) {
+                                const expectedUsd = pkts * unitUsd;
+                                if (totalUsd <= 0 || Math.abs(totalUsd - expectedUsd) > Math.max(4, expectedUsd * 0.05)) {
+                                    const stripped5 = rawTot.startsWith('5') ? parseFloat(rawTot.slice(1)) : NaN;
+                                    const stripped12 = rawTot.startsWith('12') ? parseFloat(rawTot.slice(2)) : NaN;
+                                    if (!isNaN(stripped5) && Math.abs(stripped5 - expectedUsd) <= Math.max(4, expectedUsd * 0.05)) {
+                                        totalUsd = stripped5;
+                                    } else if (!isNaN(stripped12) && Math.abs(stripped12 - expectedUsd) <= Math.max(4, expectedUsd * 0.05)) {
+                                        totalUsd = stripped12;
+                                    } else {
+                                        totalUsd = parseFloat(expectedUsd.toFixed(2));
                                     }
-                                } else {
-                                    lines.push(...result.data.text.split('\n').map(l => l.replace(/\|/g, ' ').trim()).filter(Boolean));
                                 }
                             }
-                        }
 
-                        const fullTextUpper = lines.join(' ').toUpperCase();
-                        const isSmartGlobal = fullTextUpper.includes('SMART GLOBAL') ||
-                            fullTextUpper.includes('QUANTITY(BAGS)') ||
-                            fullTextUpper.includes('BAGS SIZE');
-                        const isJacme = fullTextUpper.includes('JACME') ||
-                            fullTextUpper.includes('WT/PACK') ||
-                            fullTextUpper.includes('PACK/CARTON') ||
-                            fullTextUpper.includes('HAND GRATED COCONUT') ||
-                            fullTextUpper.includes('RESTAURANT POROTTA');
-
-                        if (isSmartGlobal) {
-                            this.supplier = 'smart';
-                            this.parseSmartGlobalLines(structuredRows, lines);
-                        } else if (isJacme || this.supplier === 'jacme') {
-                            this.supplier = 'jacme';
-                            this.parseJacmeGridRows(ocrWordRows, detectedGridXs, detectedCropW, lines);
-                        } else {
-                            this.supplier = 'smart';
-                            this.parseSmartGlobalLines(structuredRows, lines);
+                            parsed.push({
+                                id: this.nextId++,
+                                name,
+                                nazPcs: 0,
+                                nazCtns: 0,
+                                nazNetWt: 0,
+                                jacmeWtPack: wtPackG,
+                                jacmePackCtn: packCtn,
+                                jacmeCtns: ctns,
+                                jacmePackets: pkts,
+                                smartQty: 0,
+                                smartBagSize: 0,
+                                smartNetWt: 0,
+                                lineTotalUSD: parseFloat(totalUsd.toFixed(2)),
+                                targetGp: this.globalTargetGp,
+                                sellPrice: null,
+                                manualOverride: false
+                            });
                         }
+                        return parsed;
                     },
 
                     // --- 3. SMART GLOBAL VENTURES PDF PARSER ---
@@ -1091,177 +1255,9 @@
                             }
                         }
 
-                        if (parsed.length === 0) {
-                            for (const raw of lines) {
-                                const upper = raw.toUpperCase();
-                                if (upper.includes('TOTAL') || upper.includes('DESCRIPTION') || upper.includes('BANK')) continue;
-
-                                const m = raw.match(/^(?:\d+\s+)?(\d{6,8})\s+(.+?)\s+([\d,]+)\s+(\d+(?:\.\d+)?)\s+([\d,]+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+\$?([\d,]+(?:\.\d+)?)$/);
-                                if (!m) continue;
-
-                                const name = m[2].trim();
-                                let qty = parseFloat(m[3].replace(/,/g, '')) || 0;
-                                let bagSize = parseFloat(m[4]) || 0;
-                                let netWt = parseFloat(m[5].replace(/,/g, '')) || 0;
-                                const totalUsd = parseFloat(m[7].replace(/,/g, '')) || 0;
-                                if (!qty && netWt > 0 && bagSize > 0) qty = Math.round(netWt / bagSize);
-                                if (!netWt && qty > 0 && bagSize > 0) netWt = qty * bagSize;
-                                if (!bagSize && qty > 0 && netWt > 0) bagSize = netWt / qty;
-
-                                parsed.push({
-                                    id: this.nextId++,
-                                    name,
-                                    nazPcs: 0,
-                                    nazCtns: 0,
-                                    nazNetWt: 0,
-                                    jacmeWtPack: 0,
-                                    jacmePackCtn: 0,
-                                    jacmeCtns: 0,
-                                    jacmePackets: 0,
-                                    smartQty: qty,
-                                    smartBagSize: bagSize,
-                                    smartNetWt: netWt,
-                                    lineTotalUSD: parseFloat(totalUsd.toFixed(2)),
-                                    targetGp: this.globalTargetGp,
-                                    sellPrice: null,
-                                    manualOverride: false
-                                });
-                            }
-                        }
-
                         if (!parsed.length) throw new Error('Could not parse items from Smart Global PDF.');
                         this.items = parsed;
                         this.parseMessage = `Extracted ${parsed.length} items from Smart Global (15% GP applied).`;
-                    },
-
-                    // --- 2. JACME COLUMN-LOCKED GRID PARSER ---
-                    cleanOcrInteger(str) {
-                        // Removes commas, spaces, or misread thousands dots (e.g., "1,904" or "1.904" -> 1904)
-                        const digits = String(str || '').replace(/[^\d]/g, '');
-                        return digits ? parseInt(digits, 10) : 0;
-                    },
-                    cleanOcrCurrency(str) {
-                        let s = String(str || '').replace(/\$/g, '').replace(/,/g, '').replace(/\s+/g, '').trim();
-                        if (!s) return 0;
-                        const dots = (s.match(/\./g) || []).length;
-                        if (dots > 1) {
-                            const parts = s.split('.');
-                            const dec = parts.pop();
-                            s = parts.join('') + '.' + dec;
-                        }
-                        const val = parseFloat(s);
-                        return isNaN(val) ? 0 : val;
-                    },
-                    parseJacmeGridRows(ocrWordRows, gridXs, cropW, fallbackLines) {
-                        const parsed = [];
-                        const skips = ['JACME', 'NANDI ESTATE', 'GSTIN', 'DETAILED INVOICE', 'DESCRIPTION OF GOODS', 'BANK DETAILS', 'ACCOUNT NAME', 'A/C NUMBER', 'BANK NAME', 'BRANCH NAME', 'IFSC CODE', 'SWIFT CODE', 'PRICES MENTIONED', 'TOTAL AMOUNT', 'FINAL INVOICE', 'TERMS OF PAYMENT', 'DISPATCHED THROUGH', 'RIVER VIEW ROAD', 'SHYER LIMITED'];
-
-                        // Determine the 9 vertical column divider boundaries (10 X-positions)
-                        // [0:SL_start, 1:Desc_start, 2:WtPack_start, 3:PackCtn_start, 4:Ctns_start, 5:FOB_start, 6:FOBOffer_start, 7:Pkts_start, 8:TotAmt_start, 9:Right_edge]
-                        let cols = null;
-                        if (gridXs && gridXs.length >= 10) {
-                            cols = gridXs.slice(-10);
-                        } else if (cropW > 0) {
-                            const ratios = [0.006, 0.080, 0.405, 0.495, 0.570, 0.648, 0.742, 0.822, 0.903, 0.998];
-                            cols = ratios.map(r => Math.round(r * cropW));
-                        }
-
-                        if (ocrWordRows && ocrWordRows.length > 0 && cols && cols.length === 10) {
-                            for (const words of ocrWordRows) {
-                                const rowJoined = words.map(w => w.text).join(' ');
-                                const upper = rowJoined.toUpperCase();
-                                if (!rowJoined || skips.some(k => upper.includes(k))) continue;
-
-                                // Bucket every word into its exact table column using word center X
-                                const buckets = [[], [], [], [], [], [], [], [], []];
-                                for (const w of words) {
-                                    for (let c = 0; c < 9; c++) {
-                                        if (w.x >= cols[c] - 3 && w.x < cols[c + 1] + 3) {
-                                            buckets[c].push(w.text);
-                                            break;
-                                        }
-                                    }
-                                }
-
-                                let name = buckets[1].join(' ').trim();
-                                if (!name) continue;
-                                // Repair leading "Frozen" if vertical border erasure clipped 'F'
-                                name = name.replace(/^(?:Гrozen|Trozer|lrozen|rozen)\b/i, 'Frozen');
-
-                                let wtPackG = this.cleanOcrInteger(buckets[2].join(''));
-                                let packCtn = this.cleanOcrInteger(buckets[3].join(''));
-                                let ctns = this.cleanOcrInteger(buckets[4].join(''));
-                                const fobStd = this.cleanOcrCurrency(buckets[5].join(''));
-                                const fobOffer = this.cleanOcrCurrency(buckets[6].join(''));
-                                let pkts = this.cleanOcrInteger(buckets[7].join(''));
-                                let totalUsd = this.cleanOcrCurrency(buckets[8].join(''));
-
-                                // Must have at least a product name and either price or quantity
-                                if (totalUsd <= 0 && fobOffer <= 0 && pkts <= 0 && ctns <= 0) continue;
-
-                                // Cross-check Wt/Pack against explicit "1Kg" / "2Kg" in product name
-                                if (/1\s*kg/i.test(name) && wtPackG !== 1000) wtPackG = 1000;
-                                if (/2\s*kg/i.test(name) && wtPackG !== 2000) wtPackG = 2000;
-
-                                // Algebraic self-healing check 1: Pack/Carton * No of Cartons == No. Packets
-                                if (packCtn > 0 && ctns > 0) {
-                                    const prod = packCtn * ctns;
-                                    if (pkts === 0 || pkts !== prod) {
-                                        // If pkts matches fobOffer * pkts ≈ totalUsd, repair ctns; otherwise pkts = packCtn * ctns
-                                        if (pkts > 0 && fobOffer > 0 && Math.abs(pkts * fobOffer - totalUsd) < Math.max(3, totalUsd * 0.02)) {
-                                            ctns = Math.round(pkts / packCtn);
-                                        } else {
-                                            pkts = prod;
-                                        }
-                                    }
-                                } else if (pkts > 0 && packCtn > 0 && ctns === 0) {
-                                    ctns = Math.round(pkts / packCtn);
-                                } else if (pkts > 0 && ctns > 0 && packCtn === 0) {
-                                    packCtn = Math.round(pkts / ctns);
-                                }
-
-                                // Algebraic self-healing check 2: Repair OCR dropped decimal or missing leading digit in Total Amount
-                                const unitUsd = fobOffer > 0 ? fobOffer : fobStd;
-                                if (pkts > 0 && unitUsd > 0) {
-                                    const expectedUsd = pkts * unitUsd;
-                                    if (totalUsd <= 0) {
-                                        totalUsd = expectedUsd;
-                                    } else if (totalUsd > expectedUsd * 20 && Math.abs((totalUsd / 100) - expectedUsd) / expectedUsd < 0.08) {
-                                        // e.g. $69760 -> $697.60
-                                        totalUsd = totalUsd / 100;
-                                    } else if (expectedUsd > 1000 && totalUsd < expectedUsd * 0.5) {
-                                        // e.g. "$1,219.20" read as "219.20" (dropped leading '1,')
-                                        const leadThousands = Math.round((expectedUsd - totalUsd) / 1000) * 1000;
-                                        if (leadThousands > 0 && Math.abs((totalUsd + leadThousands) - expectedUsd) / expectedUsd < 0.05) {
-                                            totalUsd = totalUsd + leadThousands;
-                                        }
-                                    }
-                                }
-
-                                parsed.push({
-                                    id: this.nextId++,
-                                    name,
-                                    nazPcs: 0,
-                                    nazCtns: 0,
-                                    nazNetWt: 0,
-                                    jacmeWtPack: wtPackG,
-                                    jacmePackCtn: packCtn,
-                                    jacmeCtns: ctns,
-                                    jacmePackets: pkts,
-                                    smartQty: 0,
-                                    smartBagSize: 0,
-                                    smartNetWt: 0,
-                                    lineTotalUSD: parseFloat(totalUsd.toFixed(2)),
-                                    targetGp: this.globalTargetGp,
-                                    sellPrice: null,
-                                    manualOverride: false
-                                });
-                            }
-                        }
-
-                        if (!parsed.length) throw new Error('Could not parse items from JACME PDF.');
-                        this.items = parsed;
-                        this.parseMessage = `Extracted ${parsed.length} items from JACME (15% GP applied).`;
                     }
                 }
             }).mount('#app');
