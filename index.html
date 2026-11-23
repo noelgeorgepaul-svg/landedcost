@@ -25,7 +25,7 @@
             width: 100%;
             border: 1px solid #E2E8F0;
             border-radius: 0.5rem;
-            padding: 0.4rem 0.6rem;
+            padding: 0.35rem 0.5rem;
             font-size: 0.875rem;
             background-color: #FAFAF9;
             transition: all 0.2s;
@@ -195,34 +195,34 @@
                 </div>
 
                 <div class="overflow-x-auto">
-                    <table class="w-full text-left border-collapse min-w-[1360px]">
+                    <table class="w-full text-left border-collapse min-w-[1160px]">
                         <thead>
-                            <tr class="bg-[#FDFBF7] text-[#8B7355] text-[10px] uppercase tracking-widest border-b-2 border-[#EAE6DF]">
-                                <th class="p-3 w-8 text-center">#</th>
-                                <th class="p-3 min-w-[290px]">Product Name</th>
+                            <tr class="bg-[#FDFBF7] text-[#8B7355] text-[10px] uppercase tracking-wider border-b-2 border-[#EAE6DF]">
+                                <th class="p-2.5 w-8 text-center">#</th>
+                                <th class="p-2.5 min-w-[230px]">Product Name</th>
 
                                 <!-- Naz Foods Columns -->
-                                <th v-if="supplier === 'naz'" class="p-3 w-16 text-center">Pcs/Ctn</th>
-                                <th v-if="supplier === 'naz'" class="p-3 w-16 text-center">Ctns</th>
+                                <th v-if="supplier === 'naz'" class="p-2.5 w-16 text-center">Pcs/Ctn</th>
+                                <th v-if="supplier === 'naz'" class="p-2.5 w-16 text-center">Ctns</th>
 
                                 <!-- JACME Columns -->
-                                <th v-if="supplier === 'jacme'" class="p-3 w-20 text-center">Wt/Pack(g)</th>
-                                <th v-if="supplier === 'jacme'" class="p-3 w-20 text-center">Packets</th>
+                                <th v-if="supplier === 'jacme'" class="p-2.5 w-20 text-center">Wt/Pack(g)</th>
+                                <th v-if="supplier === 'jacme'" class="p-2.5 w-20 text-center">Packets</th>
 
                                 <!-- Smart Global Columns -->
-                                <th v-if="supplier === 'smart'" class="p-3 w-24 text-center">Qty (Bags)</th>
-                                <th v-if="supplier === 'smart'" class="p-3 w-24 text-center">Bag Size(kg)</th>
+                                <th v-if="supplier === 'smart'" class="p-2.5 w-20 text-center">Qty (Bags)</th>
+                                <th v-if="supplier === 'smart'" class="p-2.5 w-20 text-center">Bag Size(kg)</th>
 
-                                <th class="p-3 w-24 text-center">Net Wt(kg)</th>
-                                <th class="p-3 w-24 text-center bg-[#F4F1EB] text-[#213955]">Wt/Pc (kg)</th>
-                                <th class="p-3 w-24 text-right">Total USD</th>
-                                <th class="p-3 w-16 text-right">Pcs</th>
-                                <th class="p-3 w-28 text-right bg-[#E8F0EC] text-[#1F4E3D] border-l border-[#CDE0D7]">Unit Landed(NZD)</th>
-                                <th class="p-3 w-20 text-center bg-[#EDF2F7] text-[#213955] border-l border-[#D3DEE8]">Target GP</th>
-                                <th class="p-3 w-24 text-right bg-[#EDF2F7] text-[#213955]">Target Price</th>
-                                <th class="p-3 w-28 text-right">Sell Price(NZD)</th>
-                                <th class="p-3 w-20 text-right">Actual GP%</th>
-                                <th class="p-3 w-10"></th>
+                                <th class="p-2.5 w-20 text-center">Net Wt(kg)</th>
+                                <th class="p-2.5 w-20 text-center bg-[#F4F1EB] text-[#213955]">Wt/Pc(kg)</th>
+                                <th class="p-2.5 w-24 text-right">Total USD</th>
+                                <th class="p-2.5 w-16 text-right">Pcs</th>
+                                <th class="p-2.5 w-24 text-right bg-[#E8F0EC] text-[#1F4E3D] border-l border-[#CDE0D7]">Unit Landed(NZD)</th>
+                                <th class="p-2.5 w-20 text-center bg-[#EDF2F7] text-[#213955] border-l border-[#D3DEE8]">Target GP</th>
+                                <th class="p-2.5 w-24 text-right bg-[#EDF2F7] text-[#213955]">Target Price</th>
+                                <th class="p-2.5 w-24 text-right">Sell Price(NZD)</th>
+                                <th class="p-2.5 w-20 text-right">Actual GP%</th>
+                                <th class="p-2.5 w-8"></th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-[#EAE6DF] text-sm">
@@ -236,51 +236,51 @@
                                         v-model="item.name"
                                         @input="autoResize($event)"
                                         rows="2"
-                                        class="input-field text-xs font-bold text-slate-700 min-w-[290px] resize-none whitespace-normal break-words leading-snug"
+                                        class="input-field text-xs font-bold text-slate-700 min-w-[230px] resize-none whitespace-normal break-words leading-snug"
                                     ></textarea>
                                 </td>
 
                                 <!-- Naz Inputs -->
-                                <td v-if="supplier === 'naz'" class="p-2"><input type="number" v-model.number="item.nazPcs" class="input-field text-center text-xs font-semibold p-1"></td>
-                                <td v-if="supplier === 'naz'" class="p-2"><input type="number" v-model.number="item.nazCtns" class="input-field text-center text-xs font-semibold p-1"></td>
+                                <td v-if="supplier === 'naz'" class="p-1.5"><input type="number" v-model.number="item.nazPcs" class="input-field text-center text-xs font-semibold p-1"></td>
+                                <td v-if="supplier === 'naz'" class="p-1.5"><input type="number" v-model.number="item.nazCtns" class="input-field text-center text-xs font-semibold p-1"></td>
 
                                 <!-- Jacme Inputs -->
-                                <td v-if="supplier === 'jacme'" class="p-2"><input type="number" v-model.number="item.jacmeWtPack" class="input-field text-center text-xs font-semibold p-1"></td>
-                                <td v-if="supplier === 'jacme'" class="p-2"><input type="number" v-model.number="item.jacmePackets" class="input-field text-center text-xs font-semibold p-1"></td>
+                                <td v-if="supplier === 'jacme'" class="p-1.5"><input type="number" v-model.number="item.jacmeWtPack" class="input-field text-center text-xs font-semibold p-1"></td>
+                                <td v-if="supplier === 'jacme'" class="p-1.5"><input type="number" v-model.number="item.jacmePackets" class="input-field text-center text-xs font-semibold p-1"></td>
 
                                 <!-- Smart Global Inputs -->
-                                <td v-if="supplier === 'smart'" class="p-2"><input type="number" v-model.number="item.smartQty" class="input-field text-center text-xs font-semibold p-1"></td>
-                                <td v-if="supplier === 'smart'" class="p-2"><input type="number" step="0.01" v-model.number="item.smartBagSize" class="input-field text-center text-xs font-semibold p-1"></td>
+                                <td v-if="supplier === 'smart'" class="p-1.5"><input type="number" v-model.number="item.smartQty" class="input-field text-center text-xs font-semibold p-1"></td>
+                                <td v-if="supplier === 'smart'" class="p-1.5"><input type="number" step="0.01" v-model.number="item.smartBagSize" class="input-field text-center text-xs font-semibold p-1"></td>
 
                                 <!-- Net Weight -->
-                                <td class="p-2">
+                                <td class="p-1.5">
                                     <input v-if="supplier === 'naz'" type="number" step="0.001" v-model.number="item.nazNetWt" class="input-field text-center text-xs font-bold text-[#8B5A2B] p-1">
                                     <input v-else-if="supplier === 'smart'" type="number" step="0.001" v-model.number="item.smartNetWt" class="input-field text-center text-xs font-bold text-[#8B5A2B] p-1">
                                     <div v-else class="text-center text-xs font-bold text-[#8B5A2B] p-1">{{ formatNumber(getItemWeight(item)) }}</div>
                                 </td>
 
                                 <!-- Wt/Piece Backwards Calc -->
-                                <td class="p-2 text-center bg-[#F4F1EB]/50 text-xs font-black text-[#213955]">
+                                <td class="p-1.5 text-center bg-[#F4F1EB]/50 text-xs font-black text-[#213955]">
                                     {{ getUnitWeight(item) > 0 ? getUnitWeight(item).toFixed(3) : '0.000' }}
                                 </td>
 
                                 <!-- Total USD -->
-                                <td class="p-2"><input type="number" step="0.01" v-model.number="item.lineTotalUSD" class="input-field text-right text-xs font-bold p-1"></td>
+                                <td class="p-1.5"><input type="number" step="0.01" v-model.number="item.lineTotalUSD" class="input-field text-right text-xs font-bold p-1"></td>
 
                                 <!-- Pcs -->
-                                <td class="p-2 text-right text-xs font-bold text-slate-500">{{ getItemPieces(item).toLocaleString() }}</td>
+                                <td class="p-1.5 text-right text-xs font-bold text-slate-500">{{ getItemPieces(item).toLocaleString() }}</td>
 
                                 <!-- Unit Landed NZD -->
-                                <td class="p-2 bg-[#E8F0EC]/50 text-right font-black text-[#1F4E3D] text-xs border-l border-[#CDE0D7]">
+                                <td class="p-1.5 bg-[#E8F0EC]/50 text-right font-black text-[#1F4E3D] text-xs border-l border-[#CDE0D7]">
                                     ${{ formatUnit(getUnitLandedCost(item)) }}
                                 </td>
 
                                 <!-- Per-Line Target GP Dropdown -->
-                                <td class="p-2 bg-[#EDF2F7]/50 text-center border-l border-[#D3DEE8]">
+                                <td class="p-1.5 bg-[#EDF2F7]/50 text-center border-l border-[#D3DEE8]">
                                     <select
                                         v-model.number="item.targetGp"
                                         @change="onLineTargetGpChange(item)"
-                                        class="bg-white border border-[#B3C7DB] rounded px-1.5 py-1 text-xs font-bold text-[#213955] cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#213955]"
+                                        class="bg-white border border-[#B3C7DB] rounded px-1 py-1 text-xs font-bold text-[#213955] cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#213955]"
                                     >
                                         <option :value="0.15">15%</option>
                                         <option :value="0.20">20%</option>
@@ -289,30 +289,30 @@
                                 </td>
 
                                 <!-- Target Price -->
-                                <td class="p-2 bg-[#EDF2F7]/50 text-right font-black text-[#213955] text-xs">
-                                    <div class="flex justify-end items-center gap-1.5">
+                                <td class="p-1.5 bg-[#EDF2F7]/50 text-right font-black text-[#213955] text-xs">
+                                    <div class="flex justify-end items-center gap-1">
                                         <span>${{ formatNumber(getTargetPrice(item)) }}</span>
-                                        <button @click="applyTarget(item)" class="text-[#213955] hover:text-white hover:bg-[#213955] border border-[#213955] rounded px-1.5 py-0.5 text-[9px] uppercase tracking-wider transition" title="Set Sell Price to Target">Set</button>
+                                        <button @click="applyTarget(item)" class="text-[#213955] hover:text-white hover:bg-[#213955] border border-[#213955] rounded px-1 py-0.5 text-[9px] uppercase tracking-wider transition" title="Set Sell Price to Target">Set</button>
                                     </div>
                                 </td>
 
                                 <!-- Sell Price (includes Target GP by default, editable) -->
-                                <td class="p-2">
+                                <td class="p-1.5">
                                     <input
                                         type="number"
                                         step="0.01"
                                         :value="getDisplaySellPrice(item)"
                                         @input="onManualSellPriceInput(item, $event)"
-                                        class="input-field text-right text-xs font-black text-[#8B5A2B] bg-[#FFFBF0] border-[#E8DCC4] focus:border-[#8B5A2B] p-1.5"
+                                        class="input-field text-right text-xs font-black text-[#8B5A2B] bg-[#FFFBF0] border-[#E8DCC4] focus:border-[#8B5A2B] p-1"
                                     >
                                 </td>
 
                                 <!-- Actual GP -->
-                                <td class="p-2 text-right font-black text-xs" :class="getGpColor(item)">
+                                <td class="p-1.5 text-right font-black text-xs" :class="getGpColor(item)">
                                     {{ getEffectiveSellPrice(item) > 0 ? formatNumber(getGpPercentage(item)) + '%' : '—' }}
                                 </td>
 
-                                <td class="p-2 text-center">
+                                <td class="p-1.5 text-center">
                                     <button @click="removeItem(index)" class="text-slate-300 hover:text-rose-500 transition opacity-0 group-hover:opacity-100"><i class="fa-solid fa-xmark"></i></button>
                                 </td>
                             </tr>
@@ -448,7 +448,13 @@
                 },
                 getItemPieces(item) {
                     if (this.supplier === 'naz') return (parseFloat(item.nazPcs) || 0) * (parseFloat(item.nazCtns) || 0);
-                    if (this.supplier === 'smart') return parseFloat(item.smartQty) || 0;
+                    if (this.supplier === 'smart') {
+                        const q = parseFloat(item.smartQty) || 0;
+                        if (q > 0) return q;
+                        const net = parseFloat(item.smartNetWt) || 0;
+                        const sz = parseFloat(item.smartBagSize) || 0;
+                        return (net > 0 && sz > 0) ? Math.round(net / sz) : 0;
+                    }
                     return parseFloat(item.jacmePackets) || 0;
                 },
                 getUnitWeight(item) {
@@ -807,23 +813,27 @@
 
                     // Coordinate-aware extraction using exact column left edges
                     if (structuredRows.length > 0) {
-                        let bounds = { descStart: 170, qtyStart: 298, sizeStart: 345, netStart: 392, rateStart: 429, totStart: 462 };
+                        let bounds = { descStart: 170, qtyStart: 295, sizeStart: 344, netStart: 391, rateStart: 428, totStart: 460 };
                         for (const cells of structuredRows) {
                             const joined = cells.map(c => c.str.toUpperCase()).join(' ');
                             if (joined.includes('QUANTITY') && joined.includes('TOTAL')) {
                                 const hsCell = cells.find(c => c.str.toUpperCase().includes('CODE') || c.str.toUpperCase() === 'HS');
                                 const qtyCell = cells.find(c => c.str.toUpperCase().includes('QUANTITY'));
-                                const sizeCell = cells.find(c => c.str.toUpperCase().includes('BAGS') || c.str.toUpperCase().includes('SIZE'));
+                                // Exclude "QUANTITY(BAGS)" so sizeCell matches "BAGS SIZE (KG)" cleanly
+                                const sizeCell = cells.find(c =>
+                                    !c.str.toUpperCase().includes('QUANTITY') &&
+                                    (c.str.toUpperCase().includes('SIZE') || c.str.toUpperCase() === 'BAGS')
+                                );
                                 const netCell = cells.find(c => c.str.toUpperCase().includes('NETT') || c.str.toUpperCase().includes('WT(KG)'));
                                 const rateCell = cells.find(c => c.str.toUpperCase().includes('RATE'));
                                 const totCell = cells.find(c => c.str.toUpperCase().includes('TOTAL'));
 
                                 if (hsCell) bounds.descStart = hsCell.x + 25;
-                                if (qtyCell) bounds.qtyStart = qtyCell.x - 2;
-                                if (sizeCell) bounds.sizeStart = sizeCell.x - 2;
-                                if (netCell) bounds.netStart = netCell.x - 2;
-                                if (rateCell) bounds.rateStart = rateCell.x - 2;
-                                if (totCell) bounds.totStart = totCell.x - 5;
+                                if (qtyCell) bounds.qtyStart = qtyCell.x - 4;
+                                if (sizeCell) bounds.sizeStart = sizeCell.x - 4;
+                                if (netCell) bounds.netStart = netCell.x - 4;
+                                if (rateCell) bounds.rateStart = rateCell.x - 4;
+                                if (totCell) bounds.totStart = totCell.x - 6;
                                 break;
                             }
                         }
@@ -857,6 +867,7 @@
                             }
 
                             const name = descParts.join(' ').trim();
+                            if (!qty && netWt > 0 && bagSize > 0) qty = Math.round(netWt / bagSize);
                             if (!netWt && qty > 0 && bagSize > 0) netWt = qty * bagSize;
                             if (!bagSize && qty > 0 && netWt > 0) bagSize = netWt / qty;
 
@@ -891,10 +902,11 @@
                             if (!m) continue;
 
                             const name = m[2].trim();
-                            const qty = parseFloat(m[3].replace(/,/g, '')) || 0;
+                            let qty = parseFloat(m[3].replace(/,/g, '')) || 0;
                             let bagSize = parseFloat(m[4]) || 0;
                             let netWt = parseFloat(m[5].replace(/,/g, '')) || 0;
                             const totalUsd = parseFloat(m[7].replace(/,/g, '')) || 0;
+                            if (!qty && netWt > 0 && bagSize > 0) qty = Math.round(netWt / bagSize);
                             if (!netWt && qty > 0 && bagSize > 0) netWt = qty * bagSize;
                             if (!bagSize && qty > 0 && netWt > 0) bagSize = netWt / qty;
 
