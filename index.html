@@ -4,14 +4,24 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Landed Cost & Margin Portal</title>
-    <!-- Vue 3 -->
-    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <!-- Vue 3 (Primary: cdnjs, Fallback: jsDelivr) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/vue/3.5.13/vue.global.prod.min.js"></script>
+    <script>
+        if (!window.Vue) {
+            document.write('<script src="https://cdn.jsdelivr.net/npm/vue@3/dist/vue.global.prod.js"><\/script>');
+        }
+    </script>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Font Awesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <!-- SheetJS for Excel -->
-    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <!-- SheetJS for Excel (Primary: cdnjs, Fallback: SheetJS CDN) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script>
+        if (!window.XLSX) {
+            document.write('<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"><\/script>');
+        }
+    </script>
     <!-- PDF.js & Tesseract for PDF Parsing -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -19,7 +29,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js"></script>
     <style>
-        [v-cloak] { display: none; }
         body { background-color: #FDFBF7; }
         .input-field {
             width: 100%;
@@ -42,7 +51,14 @@
     </style>
 </head>
 <body class="text-slate-800 p-4 md:p-6 min-h-screen font-sans">
-    <div id="app" v-cloak class="max-w-[1640px] mx-auto space-y-6">
+
+    <!-- Visible Startup / Error Fallback Banner (hidden automatically once Vue mounts) -->
+    <div id="startup-banner" style="max-width: 680px; margin: 60px auto; padding: 24px; background: #ffffff; border: 1px solid #EAE6DF; border-top: 4px solid #1F4E3D; border-radius: 14px; font-family: sans-serif; text-align: center;">
+        <h2 style="margin: 0 0 8px; color: #1F4E3D; font-size: 20px;">Loading Landed Cost Portal...</h2>
+        <p id="startup-msg" style="margin: 0; color: #64748b; font-size: 14px;">Initializing libraries. If this message stays on screen, check your internet connection or ensure the file was saved as Plain Text HTML.</p>
+    </div>
+
+    <div id="app" style="display: none;" class="max-w-[1640px] mx-auto space-y-6">
 
         <!-- Top Header & Global Controls -->
         <div class="bg-white p-6 rounded-2xl elegant-shadow border border-[#EAE6DF] flex flex-wrap justify-between items-center gap-6 border-t-4 border-t-[#1F4E3D]">
@@ -135,3 +151,896 @@
                         <button @click="addExtraCost" class="bg-[#F2F7F5] hover:bg-[#1F4E3D] text-[#1F4E3D] hover:text-white px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1" title="Add Cost">
                             <i class="fa-solid fa-plus"></i> Add
                         </button>
+                    </div>
+
+                    <div class="space-y-3 mb-2">
+                        <div v-for="(cost, index) in extraCosts" :key="index" class="flex gap-2 items-center bg-[#FDFBF7] p-2.5 rounded-xl border border-[#EAE6DF]">
+                            <div class="flex-1 space-y-2">
+                                <input type="text" v-model="cost.name" placeholder="e.g. Customs / MPI" class="input-field text-xs font-semibold !p-1.5 !bg-transparent !border-b !border-0 !rounded-none focus:!border-[#1F4E3D] !shadow-none">
+                                <div class="flex gap-2">
+                                    <select v-model="cost.currency" class="border border-slate-300 rounded px-1.5 py-1 text-xs font-bold bg-white focus:outline-none">
+                                        <option value="NZD">NZD</option>
+                                        <option value="USD">USD</option>
+                                    </select>
+                                    <input type="number" step="0.01" v-model.number="cost.amount" placeholder="0.00" class="input-field !p-1 text-right text-xs font-bold">
+                                </div>
+                            </div>
+                            <button @click="removeExtraCost(index)" class="text-slate-300 hover:text-rose-600 px-2 transition"><i class="fa-solid fa-trash-can text-sm"></i></button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Table Area -->
+            <div class="xl:col-span-4 bg-white rounded-2xl elegant-shadow border border-[#EAE6DF] flex flex-col overflow-hidden">
+                <div class="px-6 py-4 border-b border-[#EAE6DF] flex flex-wrap justify-between items-center gap-4 bg-gradient-to-r from-[#F9F8F6] to-white">
+                    <div>
+                        <h2 class="text-lg font-black text-[#213955]">Product Line Calculations</h2>
+                        <p class="text-xs text-slate-500 font-medium">Selling prices automatically include 15% GP by default, or set GP % across all lines below.</p>
+                    </div>
+
+                    <!-- Global Bulk Target GP Controls + Export -->
+                    <div class="flex flex-wrap items-center gap-2.5">
+                        <div class="flex items-center gap-2 bg-[#F4F1EB] px-3 py-1.5 rounded-xl border border-[#EAE6DF]">
+                            <span class="text-xs font-bold text-[#3E3A35]">Set All GP:</span>
+                            <div class="flex rounded-lg overflow-hidden border border-[#D4CEC2] bg-white">
+                                <button
+                                    v-for="gpOption in [0.15, 0.20, 0.25]"
+                                    :key="gpOption"
+                                    @click="setGlobalTargetGp(gpOption)"
+                                    :class="[
+                                        'px-2.5 py-1 text-xs font-bold transition',
+                                        globalTargetGp === gpOption
+                                            ? 'bg-[#1F4E3D] text-white'
+                                            : 'text-slate-700 hover:bg-[#F2F7F5]'
+                                    ]"
+                                >
+                                    {{ Math.round(gpOption * 100) }}%
+                                </button>
+                            </div>
+                        </div>
+
+                        <button @click="applyAllTargets" class="bg-[#1F4E3D] hover:bg-[#16382B] text-white px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-sm">
+                            <i class="fa-solid fa-rotate"></i> Reset All to Target GP
+                        </button>
+
+                        <button @click="exportToPDF" class="bg-[#213955] hover:bg-[#16273B] text-white px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-sm">
+                            <i class="fa-solid fa-file-pdf"></i> Export PDF
+                        </button>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse min-w-[1160px]">
+                        <thead>
+                            <tr class="bg-[#FDFBF7] text-[#8B7355] text-[10px] uppercase tracking-wider border-b-2 border-[#EAE6DF]">
+                                <th class="p-2.5 w-8 text-center">#</th>
+                                <th class="p-2.5 min-w-[230px]">Product Name</th>
+
+                                <!-- Naz Foods Columns -->
+                                <th v-if="supplier === 'naz'" class="p-2.5 w-16 text-center">Pcs/Ctn</th>
+                                <th v-if="supplier === 'naz'" class="p-2.5 w-16 text-center">Ctns</th>
+
+                                <!-- JACME Columns -->
+                                <th v-if="supplier === 'jacme'" class="p-2.5 w-20 text-center">Wt/Pack(g)</th>
+                                <th v-if="supplier === 'jacme'" class="p-2.5 w-20 text-center">Packets</th>
+
+                                <!-- Smart Global Columns -->
+                                <th v-if="supplier === 'smart'" class="p-2.5 w-20 text-center">Qty (Bags)</th>
+                                <th v-if="supplier === 'smart'" class="p-2.5 w-20 text-center">Bag Size(kg)</th>
+
+                                <th class="p-2.5 w-20 text-center">Net Wt(kg)</th>
+                                <th class="p-2.5 w-20 text-center bg-[#F4F1EB] text-[#213955]">Wt/Pc(kg)</th>
+                                <th class="p-2.5 w-24 text-right">Total USD</th>
+                                <th class="p-2.5 w-16 text-right">Pcs</th>
+                                <th class="p-2.5 w-24 text-right bg-[#E8F0EC] text-[#1F4E3D] border-l border-[#CDE0D7]">Unit Landed(NZD)</th>
+                                <th class="p-2.5 w-20 text-center bg-[#EDF2F7] text-[#213955] border-l border-[#D3DEE8]">Target GP</th>
+                                <th class="p-2.5 w-24 text-right bg-[#EDF2F7] text-[#213955]">Target Price</th>
+                                <th class="p-2.5 w-24 text-right">Sell Price(NZD)</th>
+                                <th class="p-2.5 w-20 text-right">Actual GP%</th>
+                                <th class="p-2.5 w-8"></th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-[#EAE6DF] text-sm">
+                            <tr v-if="items.length === 0">
+                                <td colspan="16" class="p-12 text-center text-slate-400 text-sm font-medium">No lines loaded. Import an invoice to begin.</td>
+                            </tr>
+                            <tr v-for="(item, index) in items" :key="item.id" class="hover:bg-[#FCFAF8] transition group">
+                                <td class="p-2 text-center text-xs text-slate-400 font-bold">{{ index + 1 }}</td>
+                                <td class="p-2">
+                                    <textarea
+                                        v-model="item.name"
+                                        @input="autoResize($event)"
+                                        rows="2"
+                                        class="input-field text-xs font-bold text-slate-700 min-w-[230px] resize-none whitespace-normal break-words leading-snug"
+                                    ></textarea>
+                                </td>
+
+                                <!-- Naz Inputs -->
+                                <td v-if="supplier === 'naz'" class="p-1.5"><input type="number" v-model.number="item.nazPcs" class="input-field text-center text-xs font-semibold p-1"></td>
+                                <td v-if="supplier === 'naz'" class="p-1.5"><input type="number" v-model.number="item.nazCtns" class="input-field text-center text-xs font-semibold p-1"></td>
+
+                                <!-- Jacme Inputs -->
+                                <td v-if="supplier === 'jacme'" class="p-1.5"><input type="number" v-model.number="item.jacmeWtPack" class="input-field text-center text-xs font-semibold p-1"></td>
+                                <td v-if="supplier === 'jacme'" class="p-1.5"><input type="number" v-model.number="item.jacmePackets" class="input-field text-center text-xs font-semibold p-1"></td>
+
+                                <!-- Smart Global Inputs -->
+                                <td v-if="supplier === 'smart'" class="p-1.5"><input type="number" v-model.number="item.smartQty" class="input-field text-center text-xs font-semibold p-1"></td>
+                                <td v-if="supplier === 'smart'" class="p-1.5"><input type="number" step="0.01" v-model.number="item.smartBagSize" class="input-field text-center text-xs font-semibold p-1"></td>
+
+                                <!-- Net Weight -->
+                                <td class="p-1.5">
+                                    <input v-if="supplier === 'naz'" type="number" step="0.001" v-model.number="item.nazNetWt" class="input-field text-center text-xs font-bold text-[#8B5A2B] p-1">
+                                    <input v-else-if="supplier === 'smart'" type="number" step="0.001" v-model.number="item.smartNetWt" class="input-field text-center text-xs font-bold text-[#8B5A2B] p-1">
+                                    <div v-else class="text-center text-xs font-bold text-[#8B5A2B] p-1">{{ formatNumber(getItemWeight(item)) }}</div>
+                                </td>
+
+                                <!-- Wt/Piece Backwards Calc -->
+                                <td class="p-1.5 text-center bg-[#F4F1EB]/50 text-xs font-black text-[#213955]">
+                                    {{ getUnitWeight(item) > 0 ? getUnitWeight(item).toFixed(3) : '0.000' }}
+                                </td>
+
+                                <!-- Total USD -->
+                                <td class="p-1.5"><input type="number" step="0.01" v-model.number="item.lineTotalUSD" class="input-field text-right text-xs font-bold p-1"></td>
+
+                                <!-- Pcs -->
+                                <td class="p-1.5 text-right text-xs font-bold text-slate-500">{{ getItemPieces(item).toLocaleString() }}</td>
+
+                                <!-- Unit Landed NZD -->
+                                <td class="p-1.5 bg-[#E8F0EC]/50 text-right font-black text-[#1F4E3D] text-xs border-l border-[#CDE0D7]">
+                                    ${{ formatUnit(getUnitLandedCost(item)) }}
+                                </td>
+
+                                <!-- Per-Line Target GP Dropdown -->
+                                <td class="p-1.5 bg-[#EDF2F7]/50 text-center border-l border-[#D3DEE8]">
+                                    <select
+                                        v-model.number="item.targetGp"
+                                        @change="onLineTargetGpChange(item)"
+                                        class="bg-white border border-[#B3C7DB] rounded px-1 py-1 text-xs font-bold text-[#213955] cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#213955]"
+                                    >
+                                        <option :value="0.15">15%</option>
+                                        <option :value="0.20">20%</option>
+                                        <option :value="0.25">25%</option>
+                                    </select>
+                                </td>
+
+                                <!-- Target Price -->
+                                <td class="p-1.5 bg-[#EDF2F7]/50 text-right font-black text-[#213955] text-xs">
+                                    <div class="flex justify-end items-center gap-1">
+                                        <span>${{ formatNumber(getTargetPrice(item)) }}</span>
+                                        <button @click="applyTarget(item)" class="text-[#213955] hover:text-white hover:bg-[#213955] border border-[#213955] rounded px-1 py-0.5 text-[9px] uppercase tracking-wider transition" title="Set Sell Price to Target">Set</button>
+                                    </div>
+                                </td>
+
+                                <!-- Sell Price (includes Target GP by default, editable) -->
+                                <td class="p-1.5">
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        :value="getDisplaySellPrice(item)"
+                                        @input="onManualSellPriceInput(item, $event)"
+                                        class="input-field text-right text-xs font-black text-[#8B5A2B] bg-[#FFFBF0] border-[#E8DCC4] focus:border-[#8B5A2B] p-1"
+                                    >
+                                </td>
+
+                                <!-- Actual GP -->
+                                <td class="p-1.5 text-right font-black text-xs" :class="getGpColor(item)">
+                                    {{ getEffectiveSellPrice(item) > 0 ? formatNumber(getGpPercentage(item)) + '%' : '—' }}
+                                </td>
+
+                                <td class="p-1.5 text-center">
+                                    <button @click="removeItem(index)" class="text-slate-300 hover:text-rose-500 transition opacity-0 group-hover:opacity-100"><i class="fa-solid fa-xmark"></i></button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="p-4 bg-[#F9F8F6] border-t border-[#EAE6DF] flex justify-between items-center rounded-b-2xl">
+                    <button @click="addItem" class="bg-white border border-[#EAE6DF] hover:border-[#1F4E3D] hover:text-[#1F4E3D] text-slate-600 px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 elegant-shadow">
+                        <i class="fa-solid fa-plus"></i> Add Blank Row
+                    </button>
+                    <span class="text-xs font-bold text-slate-400 tracking-wider">{{ items.length }} LINES</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        if (window.pdfjsLib) {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+
+        function startApp() {
+            if (!window.Vue) {
+                const msgEl = document.getElementById('startup-msg');
+                if (msgEl) {
+                    msgEl.innerHTML = '<strong style="color:#b91c1c;">Vue library failed to load from the internet.</strong><br>Please check your internet connection and refresh the page.';
+                }
+                return;
+            }
+
+            const { createApp } = window.Vue;
+
+            createApp({
+                data() {
+                    return {
+                        supplier: 'naz',
+                        rateNzdToUsd: 0.60,
+                        globalTargetGp: 0.15,
+                        nextId: 2,
+                        isDragging: false,
+                        isParsing: false,
+                        parseStatus: '',
+                        parseProgress: 0,
+                        parseMessage: '',
+                        parseError: false,
+                        extraCosts: [
+                            { name: 'Customs & Duty', currency: 'NZD', amount: 0 },
+                            { name: 'Port / Cartage / MPI', currency: 'NZD', amount: 0 }
+                        ],
+                        items: [
+                            {
+                                id: 1,
+                                name: 'Sample Item (Upload invoice to replace)',
+                                nazPcs: 14,
+                                nazCtns: 60,
+                                nazNetWt: 840,
+                                jacmeWtPack: 400,
+                                jacmePackets: 960,
+                                smartQty: 50,
+                                smartBagSize: 26,
+                                smartNetWt: 1300,
+                                lineTotalUSD: 2346.00,
+                                targetGp: 0.15,
+                                sellPrice: null,
+                                manualOverride: false
+                            }
+                        ]
+                    };
+                },
+                computed: {
+                    supplierLabel() {
+                        if (this.supplier === 'naz') return 'Naz Foods';
+                        if (this.supplier === 'jacme') return 'JACME Agro';
+                        return 'Smart Global';
+                    },
+                    totalGoodsUSD() {
+                        return this.items.reduce((sum, i) => sum + (parseFloat(i.lineTotalUSD) || 0), 0);
+                    },
+                    totalGoodsNZD() {
+                        const r = parseFloat(this.rateNzdToUsd) || 1;
+                        return this.totalGoodsUSD / r;
+                    },
+                    totalExtraCostsNZD() {
+                        const r = parseFloat(this.rateNzdToUsd) || 1;
+                        return this.extraCosts.reduce((sum, c) => {
+                            const amt = parseFloat(c.amount) || 0;
+                            return sum + (c.currency === 'USD' ? amt / r : amt);
+                        }, 0);
+                    },
+                    totalShipmentWeight() {
+                        return this.items.reduce((sum, i) => sum + this.getItemWeight(i), 0);
+                    }
+                },
+                methods: {
+                    formatNumber(val) {
+                        return (isNaN(val) || !isFinite(val)) ? '0.00' : parseFloat(val).toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    },
+                    formatUnit(val) {
+                        return (isNaN(val) || !isFinite(val)) ? '0.000' : parseFloat(val).toFixed(3);
+                    },
+                    autoResize(e) {
+                        e.target.style.height = 'auto';
+                        e.target.style.height = e.target.scrollHeight + 'px';
+                    },
+                    addExtraCost() {
+                        this.extraCosts.push({ name: '', currency: 'NZD', amount: 0 });
+                    },
+                    removeExtraCost(i) {
+                        this.extraCosts.splice(i, 1);
+                    },
+                    addItem() {
+                        this.items.push({
+                            id: this.nextId++,
+                            name: '',
+                            nazPcs: 0,
+                            nazCtns: 0,
+                            nazNetWt: 0,
+                            jacmeWtPack: 0,
+                            jacmePackets: 0,
+                            smartQty: 0,
+                            smartBagSize: 0,
+                            smartNetWt: 0,
+                            lineTotalUSD: 0,
+                            targetGp: this.globalTargetGp,
+                            sellPrice: null,
+                            manualOverride: false
+                        });
+                    },
+                    removeItem(i) {
+                        this.items.splice(i, 1);
+                    },
+
+                    // --- WEIGHT & COST CALCULATIONS ---
+                    getItemWeight(item) {
+                        if (this.supplier === 'naz') return parseFloat(item.nazNetWt) || 0;
+                        if (this.supplier === 'smart') {
+                            const net = parseFloat(item.smartNetWt) || 0;
+                            if (net > 0) return net;
+                            return (parseFloat(item.smartQty) || 0) * (parseFloat(item.smartBagSize) || 0);
+                        }
+                        return ((parseFloat(item.jacmeWtPack) || 0) * (parseFloat(item.jacmePackets) || 0)) / 1000;
+                    },
+                    getItemPieces(item) {
+                        if (this.supplier === 'naz') return (parseFloat(item.nazPcs) || 0) * (parseFloat(item.nazCtns) || 0);
+                        if (this.supplier === 'smart') {
+                            const q = parseFloat(item.smartQty) || 0;
+                            if (q > 0) return q;
+                            const net = parseFloat(item.smartNetWt) || 0;
+                            const sz = parseFloat(item.smartBagSize) || 0;
+                            return (net > 0 && sz > 0) ? Math.round(net / sz) : 0;
+                        }
+                        return parseFloat(item.jacmePackets) || 0;
+                    },
+                    getUnitWeight(item) {
+                        const w = this.getItemWeight(item);
+                        const p = this.getItemPieces(item);
+                        return p > 0 ? (w / p) : (parseFloat(item.smartBagSize) || 0);
+                    },
+                    getUnitLandedCost(item) {
+                        const weight = this.getItemWeight(item);
+                        const pieces = this.getItemPieces(item);
+                        const lineUSD = parseFloat(item.lineTotalUSD) || 0;
+                        const r = parseFloat(this.rateNzdToUsd) || 1;
+
+                        if (pieces <= 0) return 0;
+
+                        const lineNZD = lineUSD / r;
+                        const allocatedExtra = this.totalShipmentWeight > 0
+                            ? this.totalExtraCostsNZD * (weight / this.totalShipmentWeight)
+                            : 0;
+                        return (lineNZD + allocatedExtra) / pieces;
+                    },
+                    getTargetPrice(item) {
+                        const cost = this.getUnitLandedCost(item);
+                        const gp = parseFloat(item.targetGp) || 0.15;
+                        return cost > 0 ? (cost / (1 - gp)) : 0;
+                    },
+
+                    // --- SELLING PRICE & BULK / PER-LINE GP CONTROLS ---
+                    getEffectiveSellPrice(item) {
+                        if (item.manualOverride && item.sellPrice !== null && !isNaN(item.sellPrice)) {
+                            return parseFloat(item.sellPrice) || 0;
+                        }
+                        const target = this.getTargetPrice(item);
+                        return target > 0 ? parseFloat(target.toFixed(2)) : 0;
+                    },
+                    getDisplaySellPrice(item) {
+                        const val = this.getEffectiveSellPrice(item);
+                        return val > 0 ? val.toFixed(2) : '';
+                    },
+                    onManualSellPriceInput(item, event) {
+                        const val = parseFloat(event.target.value);
+                        item.manualOverride = true;
+                        item.sellPrice = isNaN(val) ? 0 : val;
+                    },
+                    onLineTargetGpChange(item) {
+                        item.manualOverride = false;
+                        item.sellPrice = null;
+                    },
+                    applyTarget(item) {
+                        item.manualOverride = false;
+                        item.sellPrice = null;
+                    },
+                    setGlobalTargetGp(gpVal) {
+                        this.globalTargetGp = gpVal;
+                        this.items.forEach(item => {
+                            item.targetGp = gpVal;
+                            item.manualOverride = false;
+                            item.sellPrice = null;
+                        });
+                    },
+                    applyAllTargets() {
+                        this.items.forEach(item => {
+                            item.manualOverride = false;
+                            item.sellPrice = null;
+                        });
+                    },
+                    getGpPercentage(item) {
+                        const sell = this.getEffectiveSellPrice(item);
+                        const cost = this.getUnitLandedCost(item);
+                        return sell > 0 ? ((sell - cost) / sell) * 100 : 0;
+                    },
+                    getGpColor(item) {
+                        const sell = this.getEffectiveSellPrice(item);
+                        if (sell <= 0) return 'text-slate-400';
+                        const actual = this.getGpPercentage(item);
+                        const target = (parseFloat(item.targetGp) || 0.15) * 100;
+                        return actual >= (target - 0.15) ? 'text-[#1F4E3D]' : 'text-[#8B2B2B]';
+                    },
+
+                    // --- EXPORT PDF ---
+                    exportToPDF() {
+                        if (!window.jspdf) {
+                            alert('PDF export library is still loading. Please try again in a moment.');
+                            return;
+                        }
+                        const { jsPDF } = window.jspdf;
+                        const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+                        const supplierName = this.supplier === 'naz'
+                            ? 'Naz Foods'
+                            : (this.supplier === 'jacme' ? 'JACME Agro' : 'Smart Global Ventures');
+
+                        doc.setFillColor(31, 78, 61);
+                        doc.rect(0, 0, 297, 24, 'F');
+                        doc.setFontSize(16);
+                        doc.setTextColor(255, 255, 255);
+                        doc.text('Landed Cost & Margin Report', 12, 11);
+
+                        doc.setFontSize(9);
+                        doc.setTextColor(210, 230, 222);
+                        doc.text(
+                            `Supplier: ${supplierName}   |   Exchange Rate: 1 NZD = ${this.rateNzdToUsd} USD   |   Generated: ${new Date().toLocaleDateString('en-NZ')}`,
+                            12,
+                            18
+                        );
+
+                        const body = this.items.map((i, idx) => [
+                            idx + 1,
+                            i.name,
+                            this.getItemPieces(i).toLocaleString(),
+                            this.getItemWeight(i).toFixed(2),
+                            this.getUnitWeight(i).toFixed(3),
+                            '$' + (parseFloat(i.lineTotalUSD) || 0).toFixed(2),
+                            '$' + this.getUnitLandedCost(i).toFixed(3),
+                            Math.round((i.targetGp || 0.15) * 100) + '%',
+                            '$' + this.getTargetPrice(i).toFixed(2),
+                            '$' + this.getEffectiveSellPrice(i).toFixed(2),
+                            this.getEffectiveSellPrice(i) > 0 ? this.getGpPercentage(i).toFixed(1) + '%' : '-'
+                        ]);
+
+                        doc.autoTable({
+                            startY: 29,
+                            margin: { left: 10, right: 10 },
+                            head: [['#', 'Product Name', 'Pcs', 'Net Wt(kg)', 'Wt/Pc(kg)', 'Total(USD)', 'Landed(NZD)', 'Target GP', 'Target Price', 'Sell Price', 'Actual GP%']],
+                            body: body,
+                            theme: 'grid',
+                            headStyles: { fillColor: [33, 57, 85], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8 },
+                            styles: { fontSize: 7.5, cellPadding: 2.5, overflow: 'linebreak', valign: 'middle' },
+                            columnStyles: {
+                                0: { cellWidth: 9, halign: 'center' },
+                                1: { cellWidth: 78 },
+                                2: { cellWidth: 16, halign: 'right' },
+                                3: { cellWidth: 20, halign: 'right' },
+                                4: { cellWidth: 20, halign: 'right' },
+                                5: { cellWidth: 23, halign: 'right' },
+                                6: { cellWidth: 24, halign: 'right', fillColor: [242, 247, 245], textColor: [31, 78, 61], fontStyle: 'bold' },
+                                7: { cellWidth: 18, halign: 'center' },
+                                8: { cellWidth: 23, halign: 'right' },
+                                9: { cellWidth: 23, halign: 'right', fontStyle: 'bold' },
+                                10: { cellWidth: 23, halign: 'right', fontStyle: 'bold' }
+                            },
+                            alternateRowStyles: { fillColor: [253, 251, 247] }
+                        });
+
+                        let finalY = doc.lastAutoTable.finalY + 8;
+                        if (finalY > 180) {
+                            doc.addPage();
+                            finalY = 16;
+                        }
+
+                        doc.setFillColor(244, 241, 235);
+                        doc.roundedRect(10, finalY, 277, 18, 2, 2, 'F');
+                        doc.setFontSize(9.5);
+                        doc.setTextColor(31, 78, 61);
+                        doc.setFont(undefined, 'bold');
+                        doc.text(`Goods Total (USD): $${this.formatNumber(this.totalGoodsUSD)}`, 15, finalY + 7);
+                        doc.text(`Goods Total (NZD): $${this.formatNumber(this.totalGoodsNZD)}`, 15, finalY + 13.5);
+
+                        doc.setTextColor(33, 57, 85);
+                        doc.text(`Extra Landed Costs (NZD): $${this.formatNumber(this.totalExtraCostsNZD)}`, 110, finalY + 7);
+                        doc.text(`Total Landed Cost (NZD): $${this.formatNumber(this.totalGoodsNZD + this.totalExtraCostsNZD)}`, 110, finalY + 13.5);
+
+                        doc.text(`Shipment Weight: ${this.formatNumber(this.totalShipmentWeight)} kg`, 215, finalY + 7);
+
+                        doc.save(`Landed_Cost_${this.supplier}_${new Date().toISOString().slice(0, 10)}.pdf`);
+                    },
+
+                    // --- FILE UPLOAD HANDLING ---
+                    handleDrop(e) {
+                        this.isDragging = false;
+                        const f = e.dataTransfer?.files?.[0];
+                        if (f) this.processFile(f);
+                    },
+                    handleFileUpload(e) {
+                        const f = e.target?.files?.[0];
+                        if (f) this.processFile(f);
+                        e.target.value = '';
+                    },
+                    async processFile(file) {
+                        this.parseMessage = '';
+                        this.parseError = false;
+                        this.isParsing = true;
+                        this.parseProgress = 10;
+                        const ext = file.name.split('.').pop().toLowerCase();
+
+                        try {
+                            if (['xlsx', 'xls', 'csv'].includes(ext)) {
+                                this.supplier = 'naz';
+                                await this.parseNazExcel(file);
+                            } else if (ext === 'pdf') {
+                                await this.parsePdfAuto(file);
+                            } else {
+                                throw new Error('Unsupported file format.');
+                            }
+                        } catch (err) {
+                            this.parseError = true;
+                            this.parseMessage = err.message || 'Parse failed.';
+                        } finally {
+                            this.isParsing = false;
+                            this.parseProgress = 0;
+                        }
+                    },
+
+                    // --- 1. NAZ FOODS EXCEL PARSER ---
+                    async parseNazExcel(file) {
+                        if (!window.XLSX) throw new Error('Excel parser library not loaded. Check internet connection.');
+                        this.parseStatus = 'Reading Naz Foods Excel...';
+                        this.parseProgress = 45;
+                        const buffer = await file.arrayBuffer();
+                        const wb = XLSX.read(buffer, { type: 'array' });
+                        const sheetName = wb.SheetNames.find(n => n.toUpperCase().includes('INVOICE')) || wb.SheetNames[0];
+                        const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: '' });
+
+                        let headerIdx = -1;
+                        let colMap = { desc: 3, packing: 5, netWt: 7, cartons: 8, totalUsd: 10 };
+
+                        for (let r = 0; r < Math.min(rows.length, 45); r++) {
+                            const rowStr = rows[r].map(c => String(c).toUpperCase().trim());
+                            const dCol = rowStr.findIndex(c => c.includes('DESCRIPTION'));
+                            if (dCol !== -1) {
+                                headerIdx = r;
+                                colMap.desc = dCol;
+                                const pCol = rowStr.findIndex(c => c.includes('PACKING'));
+                                const nCol = rowStr.findIndex(c => c === 'NET WEIGHT' || c.includes('NET WEIGHT'));
+                                const cCol = rowStr.findIndex(c => c.includes('CARTON') && !c.includes('PER'));
+                                const aCol = rowStr.findIndex(c => c.includes('TOTAL AMT') || c.includes('AMOUNT'));
+                                if (pCol !== -1) colMap.packing = pCol;
+                                if (nCol !== -1) colMap.netWt = nCol;
+                                if (cCol !== -1) colMap.cartons = cCol;
+                                if (aCol !== -1) colMap.totalUsd = aCol;
+                                break;
+                            }
+                        }
+                        if (headerIdx === -1) throw new Error('Could not find "Description of Goods" header row.');
+
+                        const parsed = [], charges = [];
+                        for (let r = headerIdx + 1; r < rows.length; r++) {
+                            const desc = String(rows[r][colMap.desc] || '').trim();
+                            if (!desc || ['TOTAL', 'NET WT', 'GROSS WT', 'DATA LOGGER'].some(k => desc.toUpperCase().startsWith(k))) continue;
+
+                            const packRaw = String(rows[r][colMap.packing] || '').trim();
+                            const ctns = parseFloat(rows[r][colMap.cartons]) || 0;
+                            const net = parseFloat(rows[r][colMap.netWt]) || 0;
+                            const usd = parseFloat(rows[r][colMap.totalUsd]) || 0;
+
+                            if (!packRaw && ctns === 0 && usd > 0) {
+                                charges.push({ name: desc, currency: 'USD', amount: usd });
+                                continue;
+                            }
+                            if (ctns > 0 || usd > 0) {
+                                parsed.push({
+                                    id: this.nextId++,
+                                    name: desc,
+                                    nazPcs: this.extractNazPieces(packRaw),
+                                    nazCtns: ctns,
+                                    nazNetWt: net,
+                                    jacmeWtPack: 0,
+                                    jacmePackets: 0,
+                                    smartQty: 0,
+                                    smartBagSize: 0,
+                                    smartNetWt: 0,
+                                    lineTotalUSD: usd,
+                                    targetGp: this.globalTargetGp,
+                                    sellPrice: null,
+                                    manualOverride: false
+                                });
+                            }
+                        }
+                        if (!parsed.length) throw new Error('No product lines found.');
+                        this.items = parsed;
+                        this.extraCosts = this.extraCosts.filter(c => !c.fromInvoice);
+                        charges.forEach(c => this.extraCosts.unshift({ ...c, fromInvoice: true }));
+                        this.parseMessage = `Loaded ${parsed.length} items from Naz Foods (15% GP applied).`;
+                    },
+                    extractNazPieces(str) {
+                        const m = str.match(/[\d.]+\s*(?:KG|GM|G|ML|L)?\s*[xX×*]\s*(\d+)/i);
+                        return m ? parseInt(m[1], 10) : 1;
+                    },
+
+                    // --- 2 & 3. UNIFIED PDF ROUTER ---
+                    async parsePdfAuto(file) {
+                        if (!window.pdfjsLib) throw new Error('PDF parser library not loaded. Check internet connection.');
+                        this.parseStatus = 'Inspecting PDF...';
+                        this.parseProgress = 20;
+                        const buffer = await file.arrayBuffer();
+                        const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+                        let structuredRows = [];
+                        let lines = [];
+
+                        for (let i = 1; i <= pdf.numPages; i++) {
+                            const page = await pdf.getPage(i);
+                            const content = await page.getTextContent();
+                            if (content.items && content.items.length > 20) {
+                                const rows = [];
+                                content.items.forEach(it => {
+                                    const str = it.str.trim();
+                                    if (!str) return;
+                                    const y = it.transform[5], x = it.transform[4];
+                                    let r = rows.find(row => Math.abs(row.y - y) < 3.5);
+                                    if (!r) { r = { y, cells: [] }; rows.push(r); }
+                                    r.cells.push({ x, str });
+                                });
+                                rows.sort((a, b) => b.y - a.y);
+                                rows.forEach(r => {
+                                    r.cells.sort((a, b) => a.x - b.x);
+                                    structuredRows.push(r.cells);
+                                    lines.push(r.cells.map(c => c.str).join(' '));
+                                });
+                            }
+                        }
+
+                        if (lines.length < 5) {
+                            if (!window.Tesseract) throw new Error('OCR library not loaded for scanned PDF.');
+                            lines = [];
+                            structuredRows = [];
+                            for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                                this.parseStatus = `Running OCR on page ${pageNum} of ${pdf.numPages}...`;
+                                const page = await pdf.getPage(pageNum);
+                                const viewport = page.getViewport({ scale: 3.0 });
+                                const canvas = document.createElement('canvas');
+                                canvas.width = viewport.width;
+                                canvas.height = viewport.height;
+                                const ctx = canvas.getContext('2d');
+                                await page.render({ canvasContext: ctx, viewport }).promise;
+
+                                const result = await Tesseract.recognize(canvas, 'eng', {
+                                    logger: m => {
+                                        if (m.status === 'recognizing text') {
+                                            const base = ((pageNum - 1) / pdf.numPages) * 80 + 15;
+                                            this.parseProgress = Math.round(base + (m.progress * (80 / pdf.numPages)));
+                                        }
+                                    }
+                                });
+                                lines.push(...result.data.text.split('\n').map(l => l.trim()).filter(Boolean));
+                            }
+                        }
+
+                        const fullTextUpper = lines.join(' ').toUpperCase();
+                        const isSmartGlobal = fullTextUpper.includes('SMART GLOBAL') ||
+                            fullTextUpper.includes('QUANTITY(BAGS)') ||
+                            fullTextUpper.includes('BAGS SIZE');
+                        const isJacme = fullTextUpper.includes('JACME') ||
+                            fullTextUpper.includes('WT/PACK') ||
+                            fullTextUpper.includes('PACK/CARTON');
+
+                        if (isSmartGlobal) {
+                            this.supplier = 'smart';
+                            this.parseSmartGlobalLines(structuredRows, lines);
+                        } else if (isJacme || this.supplier === 'jacme') {
+                            this.supplier = 'jacme';
+                            this.parseJacmeLines(lines);
+                        } else {
+                            this.supplier = 'smart';
+                            this.parseSmartGlobalLines(structuredRows, lines);
+                        }
+                    },
+
+                    // --- 3. SMART GLOBAL VENTURES PDF PARSER ---
+                    parseSmartGlobalLines(structuredRows, lines) {
+                        const parsed = [];
+
+                        if (structuredRows.length > 0) {
+                            let bounds = { descStart: 170, qtyStart: 295, sizeStart: 344, netStart: 391, rateStart: 428, totStart: 460 };
+                            for (const cells of structuredRows) {
+                                const joined = cells.map(c => c.str.toUpperCase()).join(' ');
+                                if (joined.includes('QUANTITY') && joined.includes('TOTAL')) {
+                                    const hsCell = cells.find(c => c.str.toUpperCase().includes('CODE') || c.str.toUpperCase() === 'HS');
+                                    const qtyCell = cells.find(c => c.str.toUpperCase().includes('QUANTITY'));
+                                    const sizeCell = cells.find(c =>
+                                        !c.str.toUpperCase().includes('QUANTITY') &&
+                                        (c.str.toUpperCase().includes('SIZE') || c.str.toUpperCase() === 'BAGS')
+                                    );
+                                    const netCell = cells.find(c => c.str.toUpperCase().includes('NETT') || c.str.toUpperCase().includes('WT(KG)'));
+                                    const rateCell = cells.find(c => c.str.toUpperCase().includes('RATE'));
+                                    const totCell = cells.find(c => c.str.toUpperCase().includes('TOTAL'));
+
+                                    if (hsCell) bounds.descStart = hsCell.x + 25;
+                                    if (qtyCell) bounds.qtyStart = qtyCell.x - 4;
+                                    if (sizeCell) bounds.sizeStart = sizeCell.x - 4;
+                                    if (netCell) bounds.netStart = netCell.x - 4;
+                                    if (rateCell) bounds.rateStart = rateCell.x - 4;
+                                    if (totCell) bounds.totStart = totCell.x - 6;
+                                    break;
+                                }
+                            }
+
+                            for (const cells of structuredRows) {
+                                const upper = cells.map(c => c.str).join(' ').toUpperCase();
+                                if (upper.includes('TOTAL') || upper.includes('DESCRIPTION') || upper.includes('EXCHANGE RATE')) continue;
+
+                                const hasHsCode = cells.some(c => /^\d{6,8}$/.test(c.str.trim()) && c.x < bounds.descStart);
+                                if (!hasHsCode) continue;
+
+                                const descParts = [];
+                                let qty = 0, bagSize = 0, netWt = 0, totalUsd = 0;
+
+                                for (const c of cells) {
+                                    if (c.x < bounds.descStart) continue;
+                                    const num = parseFloat(c.str.replace(/[$,]/g, ''));
+
+                                    if (c.x < bounds.qtyStart) {
+                                        descParts.push(c.str);
+                                    } else if (c.x < bounds.sizeStart && !isNaN(num)) {
+                                        qty = num;
+                                    } else if (c.x < bounds.netStart && !isNaN(num)) {
+                                        bagSize = num;
+                                    } else if (c.x < bounds.rateStart && !isNaN(num)) {
+                                        netWt = num;
+                                    } else if (c.x >= bounds.totStart && !isNaN(num)) {
+                                        totalUsd = num;
+                                    }
+                                }
+
+                                const name = descParts.join(' ').trim();
+                                if (!qty && netWt > 0 && bagSize > 0) qty = Math.round(netWt / bagSize);
+                                if (!netWt && qty > 0 && bagSize > 0) netWt = qty * bagSize;
+                                if (!bagSize && qty > 0 && netWt > 0) bagSize = netWt / qty;
+
+                                if (name && (qty > 0 || totalUsd > 0)) {
+                                    parsed.push({
+                                        id: this.nextId++,
+                                        name,
+                                        nazPcs: 0,
+                                        nazCtns: 0,
+                                        nazNetWt: 0,
+                                        jacmeWtPack: 0,
+                                        jacmePackets: 0,
+                                        smartQty: qty,
+                                        smartBagSize: bagSize,
+                                        smartNetWt: netWt,
+                                        lineTotalUSD: parseFloat(totalUsd.toFixed(2)),
+                                        targetGp: this.globalTargetGp,
+                                        sellPrice: null,
+                                        manualOverride: false
+                                    });
+                                }
+                            }
+                        }
+
+                        if (parsed.length === 0) {
+                            for (const raw of lines) {
+                                const upper = raw.toUpperCase();
+                                if (upper.includes('TOTAL') || upper.includes('DESCRIPTION') || upper.includes('BANK')) continue;
+
+                                const m = raw.match(/^(?:\d+\s+)?(\d{6,8})\s+(.+?)\s+([\d,]+)\s+(\d+(?:\.\d+)?)\s+([\d,]+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+\$?([\d,]+(?:\.\d+)?)$/);
+                                if (!m) continue;
+
+                                const name = m[2].trim();
+                                let qty = parseFloat(m[3].replace(/,/g, '')) || 0;
+                                let bagSize = parseFloat(m[4]) || 0;
+                                let netWt = parseFloat(m[5].replace(/,/g, '')) || 0;
+                                const totalUsd = parseFloat(m[7].replace(/,/g, '')) || 0;
+                                if (!qty && netWt > 0 && bagSize > 0) qty = Math.round(netWt / bagSize);
+                                if (!netWt && qty > 0 && bagSize > 0) netWt = qty * bagSize;
+                                if (!bagSize && qty > 0 && netWt > 0) bagSize = netWt / qty;
+
+                                parsed.push({
+                                    id: this.nextId++,
+                                    name,
+                                    nazPcs: 0,
+                                    nazCtns: 0,
+                                    nazNetWt: 0,
+                                    jacmeWtPack: 0,
+                                    jacmePackets: 0,
+                                    smartQty: qty,
+                                    smartBagSize: bagSize,
+                                    smartNetWt: netWt,
+                                    lineTotalUSD: parseFloat(totalUsd.toFixed(2)),
+                                    targetGp: this.globalTargetGp,
+                                    sellPrice: null,
+                                    manualOverride: false
+                                });
+                            }
+                        }
+
+                        if (!parsed.length) throw new Error('Could not parse items from Smart Global PDF.');
+                        this.items = parsed;
+                        this.parseMessage = `Extracted ${parsed.length} items from Smart Global (15% GP applied).`;
+                    },
+
+                    // --- 2. JACME AGRO PDF PARSER ---
+                    parseJacmeLines(lines) {
+                        const parsed = [];
+                        const skips = ['JACME', 'NANDI ESTATE', 'GSTIN', 'DETAILED INVOICE', 'DESCRIPTION OF GOODS', 'BANK DETAILS', 'ACCOUNT NAME', 'A/C NUMBER', 'BANK NAME', 'BRANCH NAME', 'IFSC CODE', 'SWIFT CODE', 'PRICES MENTIONED', 'TOTAL AMOUNT', 'FINAL INVOICE', 'TERMS OF PAYMENT', 'DISPATCHED THROUGH', 'RIVER VIEW ROAD', 'SHYER LIMITED'];
+
+                        for (const raw of lines) {
+                            if (skips.some(k => raw.toUpperCase().includes(k))) continue;
+                            if (!/[\d.,]+\s*\$|\$\s*[\d.,]+/.test(raw)) continue;
+
+                            const match = raw.match(/^(?:\d+\s+)?([A-Za-z][A-Za-z0-9\s().+\-\/]+?)\s+(\d{2,4})\s+(.+)$/);
+                            if (!match) continue;
+
+                            let name = match[1].trim();
+                            if (/^ozen\s+/i.test(name)) name = 'Fr' + name;
+
+                            let grams = parseInt(match[2], 10);
+                            if (/1\s*kg/i.test(name)) grams = 1000;
+                            if (/2\s*kg/i.test(name)) grams = 2000;
+
+                            const curTokens = [...match[3].matchAll(/\$?\s*(\d[\d,.]*)\s*\$?/g)].map(m => m[0].trim());
+                            const dVals = [], iVals = [];
+                            for (const tok of curTokens) {
+                                let cleaned = tok.replace(/\$/g, '').replace(/,/g, '').trim();
+                                const dots = (cleaned.match(/\./g) || []).length;
+                                if (dots > 1) {
+                                    const p = cleaned.split('.');
+                                    const d = p.pop();
+                                    cleaned = p.join('') + '.' + d;
+                                }
+                                const num = parseFloat(cleaned);
+                                if (isNaN(num)) continue;
+                                if (tok.includes('$') || cleaned.includes('.')) dVals.push(num);
+                                else iVals.push(Math.round(num));
+                            }
+                            if (dVals.length === 0) continue;
+
+                            let lineUsd = dVals[dVals.length - 1];
+                            let pkts = iVals.length >= 3 ? iVals[iVals.length - 1] : (iVals.length === 2 ? iVals[1] : (iVals.length === 1 ? iVals[0] : 0));
+
+                            if (pkts > 0 && dVals.length >= 2) {
+                                const expected = pkts * dVals[dVals.length - 2];
+                                if (lineUsd > expected * 20 && Math.abs((lineUsd / 100) - expected) / expected < 0.05) {
+                                    lineUsd = lineUsd / 100;
+                                }
+                            }
+
+                            if (pkts > 0 || lineUsd > 0) {
+                                parsed.push({
+                                    id: this.nextId++,
+                                    name,
+                                    nazPcs: 0,
+                                    nazCtns: 0,
+                                    nazNetWt: 0,
+                                    jacmeWtPack: grams,
+                                    jacmePackets: pkts,
+                                    smartQty: 0,
+                                    smartBagSize: 0,
+                                    smartNetWt: 0,
+                                    lineTotalUSD: parseFloat(lineUsd.toFixed(2)),
+                                    targetGp: this.globalTargetGp,
+                                    sellPrice: null,
+                                    manualOverride: false
+                                });
+                            }
+                        }
+                        if (!parsed.length) throw new Error('Could not parse items from JACME PDF.');
+                        this.items = parsed;
+                        this.parseMessage = `Extracted ${parsed.length} items from JACME (15% GP applied).`;
+                    }
+                }
+            }).mount('#app');
+
+            // Hide startup banner and show the mounted portal
+            const banner = document.getElementById('startup-banner');
+            const appEl = document.getElementById('app');
+            if (banner) banner.style.display = 'none';
+            if (appEl) appEl.style.display = 'block';
+        }
+
+        window.addEventListener('DOMContentLoaded', startApp);
+    </script>
+</body>
+</html>
