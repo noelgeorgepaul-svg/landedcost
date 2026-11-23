@@ -368,7 +368,7 @@
                 data() {
                     return {
                         supplier: 'naz',
-                        rateNzdToUsd: 0.60,
+                        rateNzdToUsd: 0.5659,
                         globalTargetGp: 0.15,
                         nextId: 2,
                         isDragging: false,
@@ -378,8 +378,8 @@
                         parseMessage: '',
                         parseError: false,
                         extraCosts: [
-                            { name: 'Customs & Duty', currency: 'NZD', amount: 0 },
-                            { name: 'Port / Cartage / MPI', currency: 'NZD', amount: 0 }
+                            { name: 'Freight', currency: 'NZD', amount: 0 },
+                            { name: 'Customs / Port / Other', currency: 'NZD', amount: 0 }
                         ],
                         items: [
                             {
@@ -395,7 +395,7 @@
                                 smartQty: 50,
                                 smartBagSize: 26,
                                 smartNetWt: 1300,
-                                lineTotalUSD: 2346.00,
+                                lineTotalUSD: 1219.20,
                                 targetGp: 0.15,
                                 sellPrice: null,
                                 manualOverride: false
@@ -814,15 +814,14 @@
                         const cropY = Math.max(0, gMaxY + 2);
                         const cropH = Math.min(h - cropY, Math.floor(h * 0.80) - cropY);
 
-                        // 2. Binarize: keep dark neutral ink as 1, strip all colored highlights & backgrounds to 0
+                        // 2. Highlight-safe binarization: dark text on ANY colored fill has max(R,G,B) < 145,
+                        // whereas white, yellow, green, cyan, magenta, and orange backgrounds all have max(R,G,B) > 180.
                         const binary = new Uint8Array(cropW * cropH);
                         for (let y = 0; y < cropH; y++) {
                             for (let x = 0; x < cropW; x++) {
                                 const sIdx = ((cropY + y) * w + (cropX + x)) * 4;
                                 const r = d[sIdx], g = d[sIdx + 1], b = d[sIdx + 2];
-                                const maxC = Math.max(r, g, b);
-                                const minC = Math.min(r, g, b);
-                                binary[y * cropW + x] = (r < 135 && g < 135 && b < 135 && (maxC - minC) < 75) ? 1 : 0;
+                                binary[y * cropW + x] = (Math.max(r, g, b) < 145) ? 1 : 0;
                             }
                         }
 
@@ -849,51 +848,45 @@
                             gridXs = ratios.map(r => Math.round(r * cropW));
                         }
 
-                        // 4. Detect horizontal row grid lines (including dotted dividers)
-                        const rawHRows = [];
+                        // 4. Detect SOLID horizontal grid lines ONLY (rowInk > 0.45 so text rows never trigger false borders)
+                        const solidHRows = [];
                         for (let y = 0; y < cropH; y++) {
                             let rowInk = 0;
                             for (let x = 0; x < cropW; x++) rowInk += binary[y * cropW + x];
-                            if (rowInk / cropW > 0.18) rawHRows.push(y);
+                            if (rowInk / cropW > 0.45) solidHRows.push(y);
                         }
-                        const hClusters = [];
-                        for (const y of rawHRows) {
-                            if (hClusters.length === 0 || y - hClusters[hClusters.length - 1].end > 4) {
-                                hClusters.push({ start: y, end: y });
+                        const sClusters = [];
+                        for (const y of solidHRows) {
+                            if (sClusters.length === 0 || y - sClusters[sClusters.length - 1].end > 4) {
+                                sClusters.push({ start: y, end: y });
                             } else {
-                                hClusters[hClusters.length - 1].end = y;
+                                sClusters[sClusters.length - 1].end = y;
                             }
                         }
-                        const rawYs = hClusters.map(c => Math.round((c.start + c.end) / 2));
+                        const solidYs = sClusters.map(c => Math.round((c.start + c.end) / 2));
 
                         const diffs = [];
-                        for (let i = 1; i < rawYs.length; i++) {
-                            const dy = rawYs[i] - rawYs[i - 1];
+                        for (let i = 1; i < solidYs.length; i++) {
+                            const dy = solidYs[i] - solidYs[i - 1];
                             if (dy >= 20 && dy <= 55) diffs.push(dy);
                         }
                         diffs.sort((a, b) => a - b);
                         const pitch = diffs.length > 0 ? diffs[Math.floor(diffs.length / 2)] : Math.round(cropW * 0.0207);
 
-                        const cleanYs = [];
-                        for (const y of rawYs) {
-                            if (cleanYs.length === 0 || (y - cleanYs[cleanYs.length - 1]) >= pitch * 0.65) {
-                                cleanYs.push(y);
-                            }
-                        }
-
+                        // Divide each solid-line interval evenly into round(span / pitch) equal row bands
                         const allBands = [];
-                        for (let i = 0; i < cleanYs.length - 1; i++) {
-                            const yA = cleanYs[i];
-                            const yB = cleanYs[i + 1];
+                        for (let i = 0; i < solidYs.length - 1; i++) {
+                            const yA = solidYs[i];
+                            const yB = solidYs[i + 1];
                             const span = yB - yA;
                             const subRows = Math.max(1, Math.round(span / pitch));
-                            if (subRows > 5) break;
+                            if (subRows > 20) break;
                             const step = span / subRows;
                             for (let s = 0; s < subRows; s++) {
-                                const rTop = Math.round(yA + s * step);
-                                const rBot = Math.round(yA + (s + 1) * step);
-                                if (rBot - rTop > pitch * 1.45) break;
-                                allBands.push({ y0: rTop, y1: rBot });
+                                allBands.push({
+                                    y0: Math.round(yA + s * step),
+                                    y1: Math.round(yA + (s + 1) * step)
+                                });
                             }
                         }
 
@@ -1029,14 +1022,12 @@
                             }
                         }
 
-                        // Digital PDF with selectable text -> Smart Global
                         if (lines.length >= 5) {
                             this.supplier = 'smart';
                             this.parseSmartGlobalLines(structuredRows, lines);
                             return;
                         }
 
-                        // Vector-Printed / Image PDF -> Cell-Grid Column Strip OCR (JACME)
                         if (!window.Tesseract) throw new Error('OCR library not loaded for scanned PDF.');
                         this.supplier = 'jacme';
                         this.parseStatus = 'Detecting invoice table grid...';
@@ -1064,7 +1055,8 @@
                                     { idx: 2, label: 'Pack Weights', whitelist: '0123456789' },
                                     { idx: 3, label: 'Pack/Carton', whitelist: '0123456789' },
                                     { idx: 4, label: 'Cartons', whitelist: '0123456789' },
-                                    { idx: 6, label: 'Unit Prices', whitelist: '0123456789.$' },
+                                    { idx: 5, label: 'Standard FOB', whitelist: '0123456789.$' },
+                                    { idx: 6, label: 'Offer Unit Prices', whitelist: '0123456789.$' },
                                     { idx: 7, label: 'Packet Counts', whitelist: '0123456789,' },
                                     { idx: 8, label: 'Line Totals', whitelist: '0123456789.$,' }
                                 ];
@@ -1090,6 +1082,14 @@
                         this.parseMessage = `Extracted ${allParsed.length} items from JACME (15% GP applied).`;
                     },
 
+                    parseCleanPrice(raw) {
+                        let s = String(raw || '').replace(/,/g, '').replace(/\$+$/, '').trim();
+                        if (/^5\d\.\d{2}$/.test(s)) s = s.slice(1); // leading '$' misread as '5'
+                        s = s.replace(/^\$+/, '');
+                        const val = parseFloat(s);
+                        return isNaN(val) ? 0 : val;
+                    },
+
                     assembleJacmeItems(numRows, colResults) {
                         const parsed = [];
                         const skips = ['TOTAL AMOUNT', 'FINAL INVOICE', 'BANK DETAILS', 'ACCOUNT NAME', 'DESCRIPTION OF GOODS'];
@@ -1105,13 +1105,12 @@
                             let ctns = parseInt((colResults[4][r] || '').replace(/[^\d]/g, ''), 10) || 0;
                             let pkts = parseInt((colResults[7][r] || '').replace(/[^\d]/g, ''), 10) || 0;
 
-                            let rawUnit = (colResults[6][r] || '').replace(/,/g, '').trim();
-                            if (/^50\.\d{2}$/.test(rawUnit)) rawUnit = rawUnit.slice(1);
-                            rawUnit = rawUnit.replace(/^\$+/, '');
-                            const unitUsd = parseFloat(rawUnit) || 0;
+                            const fobStd = this.parseCleanPrice(colResults[5][r]);
+                            const fobOffer = this.parseCleanPrice(colResults[6][r]);
+                            // Use FOB After 10+1 offer if available; otherwise derive from Standard FOB / 1.1
+                            const unitUsd = fobOffer > 0 ? fobOffer : (fobStd > 0 ? parseFloat((fobStd / 1.1).toFixed(2)) : 0);
 
-                            let rawTot = (colResults[8][r] || '').replace(/,/g, '').trim();
-                            rawTot = rawTot.replace(/^\$+/, '');
+                            let rawTot = (colResults[8][r] || '').replace(/,/g, '').replace(/\$+$/, '').replace(/^\$+/, '').trim();
                             let totalUsd = parseFloat(rawTot) || 0;
 
                             if (wtPackG === 0 && packCtn === 0 && ctns === 0 && pkts === 0 && totalUsd === 0) continue;
@@ -1119,6 +1118,7 @@
                             if (/1\s*kg/i.test(name)) wtPackG = 1000;
                             if (/2\s*kg/i.test(name)) wtPackG = 2000;
 
+                            // Algebraic check 1: Pack/Carton * No of Cartons == No. Packets
                             if (packCtn > 0 && ctns > 0) {
                                 const prod = packCtn * ctns;
                                 if (pkts !== prod) {
@@ -1134,18 +1134,20 @@
                                 packCtn = Math.round(pkts / ctns);
                             }
 
+                            // Algebraic check 2: Verify Total USD against Packets * Unit Price to strip any '$' misread as leading digits
                             if (pkts > 0 && unitUsd > 0) {
                                 const expectedUsd = pkts * unitUsd;
                                 if (totalUsd <= 0 || Math.abs(totalUsd - expectedUsd) > Math.max(4, expectedUsd * 0.05)) {
-                                    const stripped5 = rawTot.startsWith('5') ? parseFloat(rawTot.slice(1)) : NaN;
-                                    const stripped12 = rawTot.startsWith('12') ? parseFloat(rawTot.slice(2)) : NaN;
-                                    if (!isNaN(stripped5) && Math.abs(stripped5 - expectedUsd) <= Math.max(4, expectedUsd * 0.05)) {
-                                        totalUsd = stripped5;
-                                    } else if (!isNaN(stripped12) && Math.abs(stripped12 - expectedUsd) <= Math.max(4, expectedUsd * 0.05)) {
-                                        totalUsd = stripped12;
-                                    } else {
-                                        totalUsd = parseFloat(expectedUsd.toFixed(2));
+                                    // Try stripping 1, 2, or 3 prepended OCR artifacts (e.g. "74345.25" -> "345.25", "28558.44" -> "558.44")
+                                    let repaired = null;
+                                    for (let cut = 1; cut <= 3 && cut < rawTot.length - 3; cut++) {
+                                        const cand = parseFloat(rawTot.slice(cut));
+                                        if (!isNaN(cand) && Math.abs(cand - expectedUsd) <= Math.max(4, expectedUsd * 0.05)) {
+                                            repaired = cand;
+                                            break;
+                                        }
                                     }
+                                    totalUsd = repaired !== null ? repaired : parseFloat(expectedUsd.toFixed(2));
                                 }
                             }
 
