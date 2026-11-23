@@ -53,7 +53,7 @@
 
             <div class="flex flex-wrap gap-4 items-center">
                 <!-- Supplier Selector -->
-                <div class="flex items-center gap-3 bg-[#F4F1EB] px-4 py-2.5 rounded-xl border border-[#EAE6DF]">
+                <div class="flex flex-wrap items-center gap-3 bg-[#F4F1EB] px-4 py-2.5 rounded-xl border border-[#EAE6DF]">
                     <span class="font-semibold text-sm text-[#3E3A35]">Supplier:</span>
                     <label class="flex items-center gap-1.5 cursor-pointer">
                         <input type="radio" value="naz" v-model="supplier" class="accent-[#1F4E3D] w-4 h-4">
@@ -62,6 +62,10 @@
                     <label class="flex items-center gap-1.5 cursor-pointer pl-2">
                         <input type="radio" value="jacme" v-model="supplier" class="accent-[#1F4E3D] w-4 h-4">
                         <span class="text-sm font-semibold text-[#1F4E3D]">JACME (PDF)</span>
+                    </label>
+                    <label class="flex items-center gap-1.5 cursor-pointer pl-2">
+                        <input type="radio" value="smart" v-model="supplier" class="accent-[#1F4E3D] w-4 h-4">
+                        <span class="text-sm font-semibold text-[#1F4E3D]">Smart Global (PDF)</span>
                     </label>
                 </div>
 
@@ -109,8 +113,8 @@
                     <div @click="$refs.fileInput.click()" @dragover.prevent="isDragging = true" @dragleave.prevent="isDragging = false" @drop.prevent="handleDrop"
                         :class="['border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition', isDragging ? 'border-[#1F4E3D] bg-[#F2F7F5]' : 'border-slate-300 hover:border-[#213955] hover:bg-slate-50']">
                         <i :class="supplier === 'naz' ? 'fa-solid fa-file-excel text-[#1F4E3D]' : 'fa-solid fa-file-pdf text-[#8B2B2B]'" class="text-3xl mb-3"></i>
-                        <p class="text-sm font-bold text-slate-700">Click or drop file</p>
-                        <p class="text-xs text-slate-400 mt-1">{{ supplier === 'naz' ? '.xlsx / .xls' : '.pdf' }}</p>
+                        <p class="text-sm font-bold text-slate-700">Click or drop {{ supplierLabel }} file</p>
+                        <p class="text-xs text-slate-400 mt-1">{{ supplier === 'naz' ? '.xlsx / .xls' : '.pdf (Auto-detects JACME or Smart Global)' }}</p>
                     </div>
 
                     <div v-if="isParsing" class="mt-4 p-3 bg-[#F2F7F5] border border-[#CDE0D7] rounded-lg">
@@ -196,14 +200,19 @@
                             <tr class="bg-[#FDFBF7] text-[#8B7355] text-[10px] uppercase tracking-widest border-b-2 border-[#EAE6DF]">
                                 <th class="p-3 w-8 text-center">#</th>
                                 <th class="p-3 min-w-[290px]">Product Name</th>
+
                                 <!-- Naz Foods Columns -->
                                 <th v-if="supplier === 'naz'" class="p-3 w-16 text-center">Pcs/Ctn</th>
                                 <th v-if="supplier === 'naz'" class="p-3 w-16 text-center">Ctns</th>
+
                                 <!-- JACME Columns -->
                                 <th v-if="supplier === 'jacme'" class="p-3 w-20 text-center">Wt/Pack(g)</th>
                                 <th v-if="supplier === 'jacme'" class="p-3 w-20 text-center">Packets</th>
 
-                                <th class="p-3 w-20 text-center">Net Wt(kg)</th>
+                                <!-- Smart Global Columns (Bags by piece & weight, no cartons) -->
+                                <th v-if="supplier === 'smart'" class="p-3 w-24 text-center">Qty (Bags)</th>
+
+                                <th class="p-3 w-24 text-center">Net Wt(kg)</th>
                                 <th class="p-3 w-24 text-center bg-[#F4F1EB] text-[#213955]">Wt/Pc (kg)</th>
                                 <th class="p-3 w-24 text-right">Total USD</th>
                                 <th class="p-3 w-16 text-right">Pcs</th>
@@ -238,9 +247,13 @@
                                 <td v-if="supplier === 'jacme'" class="p-2"><input type="number" v-model.number="item.jacmeWtPack" class="input-field text-center text-xs font-semibold p-1"></td>
                                 <td v-if="supplier === 'jacme'" class="p-2"><input type="number" v-model.number="item.jacmePackets" class="input-field text-center text-xs font-semibold p-1"></td>
 
+                                <!-- Smart Global Inputs (Piece / Bag count) -->
+                                <td v-if="supplier === 'smart'" class="p-2"><input type="number" v-model.number="item.smartQty" class="input-field text-center text-xs font-semibold p-1"></td>
+
                                 <!-- Net Weight -->
                                 <td class="p-2">
                                     <input v-if="supplier === 'naz'" type="number" step="0.001" v-model.number="item.nazNetWt" class="input-field text-center text-xs font-bold text-[#8B5A2B] p-1">
+                                    <input v-else-if="supplier === 'smart'" type="number" step="0.001" v-model.number="item.smartNetWt" class="input-field text-center text-xs font-bold text-[#8B5A2B] p-1">
                                     <div v-else class="text-center text-xs font-bold text-[#8B5A2B] p-1">{{ formatNumber(getItemWeight(item)) }}</div>
                                 </td>
 
@@ -326,7 +339,7 @@
                 return {
                     supplier: 'naz',
                     rateNzdToUsd: 0.60,
-                    globalTargetGp: 0.15, // Default 15% GP included in Selling Price
+                    globalTargetGp: 0.15,
                     nextId: 2,
                     isDragging: false,
                     isParsing: false,
@@ -347,15 +360,22 @@
                             nazNetWt: 840,
                             jacmeWtPack: 400,
                             jacmePackets: 960,
+                            smartQty: 50,
+                            smartNetWt: 1300,
                             lineTotalUSD: 2346.00,
                             targetGp: 0.15,
-                            sellPrice: null, // null = automatically tracks Target GP (15% default)
+                            sellPrice: null,
                             manualOverride: false
                         }
                     ]
                 };
             },
             computed: {
+                supplierLabel() {
+                    if (this.supplier === 'naz') return 'Naz Foods';
+                    if (this.supplier === 'jacme') return 'JACME Agro';
+                    return 'Smart Global';
+                },
                 totalGoodsUSD() {
                     return this.items.reduce((sum, i) => sum + (parseFloat(i.lineTotalUSD) || 0), 0);
                 },
@@ -400,6 +420,8 @@
                         nazNetWt: 0,
                         jacmeWtPack: 0,
                         jacmePackets: 0,
+                        smartQty: 0,
+                        smartNetWt: 0,
                         lineTotalUSD: 0,
                         targetGp: this.globalTargetGp,
                         sellPrice: null,
@@ -413,13 +435,16 @@
                 // --- WEIGHT & COST CALCULATIONS ---
                 getItemWeight(item) {
                     if (this.supplier === 'naz') return parseFloat(item.nazNetWt) || 0;
+                    if (this.supplier === 'smart') return parseFloat(item.smartNetWt) || 0;
                     return ((parseFloat(item.jacmeWtPack) || 0) * (parseFloat(item.jacmePackets) || 0)) / 1000;
                 },
                 getItemPieces(item) {
                     if (this.supplier === 'naz') return (parseFloat(item.nazPcs) || 0) * (parseFloat(item.nazCtns) || 0);
+                    if (this.supplier === 'smart') return parseFloat(item.smartQty) || 0;
                     return parseFloat(item.jacmePackets) || 0;
                 },
                 getUnitWeight(item) {
+                    // Calculated backwards from total Net Weight / total pieces
                     const w = this.getItemWeight(item);
                     const p = this.getItemPieces(item);
                     return p > 0 ? (w / p) : 0;
@@ -432,6 +457,7 @@
 
                     if (pieces <= 0) return 0;
 
+                    // Work backwards from Line Total USD -> NZD + weight-allocated extras / pieces
                     const lineNZD = lineUSD / r;
                     const allocatedExtra = this.totalShipmentWeight > 0
                         ? this.totalExtraCostsNZD * (weight / this.totalShipmentWeight)
@@ -462,7 +488,6 @@
                     item.sellPrice = isNaN(val) ? 0 : val;
                 },
                 onLineTargetGpChange(item) {
-                    // When per-line Target GP changes, sync Selling Price to include that new GP %
                     item.manualOverride = false;
                     item.sellPrice = null;
                 },
@@ -497,12 +522,15 @@
                     return actual >= (target - 0.15) ? 'text-[#1F4E3D]' : 'text-[#8B2B2B]';
                 },
 
-                // --- EXPORT PDF (Landscape, Full Text Wrap, Zero Cutoff) ---
+                // --- EXPORT PDF ---
                 exportToPDF() {
                     const { jsPDF } = window.jspdf;
                     const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
 
-                    // Header Banner
+                    const supplierName = this.supplier === 'naz'
+                        ? 'Naz Foods'
+                        : (this.supplier === 'jacme' ? 'JACME Agro' : 'Smart Global Ventures');
+
                     doc.setFillColor(31, 78, 61);
                     doc.rect(0, 0, 297, 24, 'F');
                     doc.setFontSize(16);
@@ -512,7 +540,7 @@
                     doc.setFontSize(9);
                     doc.setTextColor(210, 230, 222);
                     doc.text(
-                        `Supplier: ${this.supplier === 'naz' ? 'Naz Foods' : 'JACME Agro'}   |   Exchange Rate: 1 NZD = ${this.rateNzdToUsd} USD   |   Generated: ${new Date().toLocaleDateString('en-NZ')}`,
+                        `Supplier: ${supplierName}   |   Exchange Rate: 1 NZD = ${this.rateNzdToUsd} USD   |   Generated: ${new Date().toLocaleDateString('en-NZ')}`,
                         12,
                         18
                     );
@@ -601,8 +629,7 @@
                             this.supplier = 'naz';
                             await this.parseNazExcel(file);
                         } else if (ext === 'pdf') {
-                            this.supplier = 'jacme';
-                            await this.parseJacmePdf(file);
+                            await this.parsePdfAuto(file);
                         } else {
                             throw new Error('Unsupported file format.');
                         }
@@ -615,8 +642,9 @@
                     }
                 },
 
+                // --- 1. NAZ FOODS EXCEL PARSER ---
                 async parseNazExcel(file) {
-                    this.parseStatus = 'Reading Excel...';
+                    this.parseStatus = 'Reading Naz Foods Excel...';
                     this.parseProgress = 45;
                     const buffer = await file.arrayBuffer();
                     const wb = XLSX.read(buffer, { type: 'array' });
@@ -668,6 +696,8 @@
                                 nazNetWt: net,
                                 jacmeWtPack: 0,
                                 jacmePackets: 0,
+                                smartQty: 0,
+                                smartNetWt: 0,
                                 lineTotalUSD: usd,
                                 targetGp: this.globalTargetGp,
                                 sellPrice: null,
@@ -679,18 +709,20 @@
                     this.items = parsed;
                     this.extraCosts = this.extraCosts.filter(c => !c.fromInvoice);
                     charges.forEach(c => this.extraCosts.unshift({ ...c, fromInvoice: true }));
-                    this.parseMessage = `Loaded ${parsed.length} items (15% GP applied).`;
+                    this.parseMessage = `Loaded ${parsed.length} items from Naz Foods (15% GP applied).`;
                 },
                 extractNazPieces(str) {
                     const m = str.match(/[\d.]+\s*(?:KG|GM|G|ML|L)?\s*[xX×*]\s*(\d+)/i);
                     return m ? parseInt(m[1], 10) : 1;
                 },
 
-                async parseJacmePdf(file) {
+                // --- 2 & 3. UNIFIED PDF ROUTER (SMART GLOBAL vs JACME) ---
+                async parsePdfAuto(file) {
                     this.parseStatus = 'Inspecting PDF...';
                     this.parseProgress = 20;
                     const buffer = await file.arrayBuffer();
                     const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+                    let structuredRows = [];
                     let lines = [];
 
                     for (let i = 1; i <= pdf.numPages; i++) {
@@ -702,18 +734,23 @@
                                 const str = it.str.trim();
                                 if (!str) return;
                                 const y = it.transform[5], x = it.transform[4];
-                                let r = rows.find(row => Math.abs(row.y - y) < 4);
+                                let r = rows.find(row => Math.abs(row.y - y) < 3.5);
                                 if (!r) { r = { y, cells: [] }; rows.push(r); }
                                 r.cells.push({ x, str });
                             });
                             rows.sort((a, b) => b.y - a.y);
-                            lines.push(...rows.map(r => { r.cells.sort((a, b) => a.x - b.x); return r.cells.map(c => c.str).join(' '); }));
+                            rows.forEach(r => {
+                                r.cells.sort((a, b) => a.x - b.x);
+                                structuredRows.push(r.cells);
+                                lines.push(r.cells.map(c => c.str).join(' '));
+                            });
                         }
                     }
 
-                    // Automatic OCR fallback for printed/image-based PDFs
+                    // Automatic OCR fallback if PDF has no selectable text layer
                     if (lines.length < 5) {
                         lines = [];
+                        structuredRows = [];
                         for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
                             this.parseStatus = `Running OCR on page ${pageNum} of ${pdf.numPages}...`;
                             const page = await pdf.getPage(pageNum);
@@ -736,6 +773,147 @@
                         }
                     }
 
+                    const fullTextUpper = lines.join(' ').toUpperCase();
+                    const isSmartGlobal = fullTextUpper.includes('SMART GLOBAL') ||
+                        fullTextUpper.includes('QUANTITY(BAGS)') ||
+                        fullTextUpper.includes('BAGS SIZE');
+                    const isJacme = fullTextUpper.includes('JACME') ||
+                        fullTextUpper.includes('WT/PACK') ||
+                        fullTextUpper.includes('PACK/CARTON');
+
+                    if (isSmartGlobal) {
+                        this.supplier = 'smart';
+                        this.parseSmartGlobalLines(structuredRows, lines);
+                    } else if (isJacme || this.supplier === 'jacme') {
+                        this.supplier = 'jacme';
+                        this.parseJacmeLines(lines);
+                    } else {
+                        this.supplier = 'smart';
+                        this.parseSmartGlobalLines(structuredRows, lines);
+                    }
+                },
+
+                // --- 3. SMART GLOBAL VENTURES PDF PARSER (Rice Bags: Piece + Net Weight) ---
+                parseSmartGlobalLines(structuredRows, lines) {
+                    const parsed = [];
+
+                    // Method A: Coordinate-aware parsing for native digital PDFs (like PI-2711001.pdf)
+                    if (structuredRows.length > 0) {
+                        // Find column X positions from the header row if present
+                        let colX = { descMin: 170, qtyMax: 355, bagSizeMax: 400, netWtMax: 435, rateMax: 470 };
+                        for (const cells of structuredRows) {
+                            const joined = cells.map(c => c.str.toUpperCase()).join(' ');
+                            if (joined.includes('QUANTITY') && joined.includes('TOTAL')) {
+                                const descCell = cells.find(c => c.str.toUpperCase().includes('DESCRIPTION'));
+                                const qtyCell = cells.find(c => c.str.toUpperCase().includes('QUANTITY'));
+                                const sizeCell = cells.find(c => c.str.toUpperCase().includes('BAGS') || c.str.toUpperCase().includes('SIZE'));
+                                const netCell = cells.find(c => c.str.toUpperCase().includes('NETT') || c.str.toUpperCase().includes('WT(KG)'));
+                                const rateCell = cells.find(c => c.str.toUpperCase().includes('RATE'));
+                                const totCell = cells.find(c => c.str.toUpperCase().includes('TOTAL'));
+
+                                if (descCell) colX.descMin = descCell.x - 30;
+                                if (qtyCell && sizeCell) colX.qtyMax = (qtyCell.x + sizeCell.x) / 2 + 15;
+                                if (sizeCell && netCell) colX.bagSizeMax = (sizeCell.x + netCell.x) / 2 + 8;
+                                if (netCell && rateCell) colX.netWtMax = (netCell.x + rateCell.x) / 2 + 5;
+                                if (rateCell && totCell) colX.rateMax = (rateCell.x + totCell.x) / 2 + 5;
+                                break;
+                            }
+                        }
+
+                        for (const cells of structuredRows) {
+                            const rowText = cells.map(c => c.str).join(' ');
+                            const upper = rowText.toUpperCase();
+                            if (upper.includes('TOTAL') || upper.includes('DESCRIPTION') || upper.includes('EXCHANGE RATE')) continue;
+
+                            // Must contain an 8-digit HS Code (e.g. 10063010) to confirm it's an item row
+                            const hasHsCode = cells.some(c => /^\d{6,8}$/.test(c.str.trim()) && c.x < colX.descMin);
+                            if (!hasHsCode) continue;
+
+                            const descParts = [];
+                            let qty = 0, bagSize = 0, netWt = 0, totalUsd = 0;
+
+                            for (const c of cells) {
+                                if (c.x < colX.descMin) continue; // skip SNO & HS CODE
+                                const cleanNum = parseFloat(c.str.replace(/[$,]/g, ''));
+
+                                if (c.x < colX.qtyMax - 35) {
+                                    descParts.push(c.str);
+                                } else if (c.x < colX.qtyMax && !isNaN(cleanNum)) {
+                                    qty = cleanNum;
+                                } else if (c.x < colX.bagSizeMax && !isNaN(cleanNum)) {
+                                    bagSize = cleanNum;
+                                } else if (c.x < colX.netWtMax && !isNaN(cleanNum)) {
+                                    netWt = cleanNum;
+                                } else if (c.x >= colX.rateMax && !isNaN(cleanNum)) {
+                                    totalUsd = cleanNum;
+                                }
+                            }
+
+                            const name = descParts.join(' ').trim();
+                            if (!netWt && qty > 0 && bagSize > 0) netWt = qty * bagSize;
+
+                            if (name && (qty > 0 || totalUsd > 0)) {
+                                parsed.push({
+                                    id: this.nextId++,
+                                    name,
+                                    nazPcs: 0,
+                                    nazCtns: 0,
+                                    nazNetWt: 0,
+                                    jacmeWtPack: 0,
+                                    jacmePackets: 0,
+                                    smartQty: qty,
+                                    smartNetWt: netWt,
+                                    lineTotalUSD: parseFloat(totalUsd.toFixed(2)),
+                                    targetGp: this.globalTargetGp,
+                                    sellPrice: null,
+                                    manualOverride: false
+                                });
+                            }
+                        }
+                    }
+
+                    // Method B: Regex fallback on text lines (for OCR / scanned Smart Global PDFs)
+                    if (parsed.length === 0) {
+                        for (const raw of lines) {
+                            const upper = raw.toUpperCase();
+                            if (upper.includes('TOTAL') || upper.includes('DESCRIPTION') || upper.includes('BANK')) continue;
+
+                            // Matches: [Optional SNO] [HS Code 6-8 digits] [Product Name] [Qty] [BagSize] [NetWt] [Rate] [TotalUSD]
+                            const m = raw.match(/^(?:\d+\s+)?(\d{6,8})\s+(.+?)\s+([\d,]+)\s+(\d+(?:\.\d+)?)\s+([\d,]+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+\$?([\d,]+(?:\.\d+)?)$/);
+                            if (!m) continue;
+
+                            const name = m[2].trim();
+                            const qty = parseFloat(m[3].replace(/,/g, '')) || 0;
+                            const bagSize = parseFloat(m[4]) || 0;
+                            let netWt = parseFloat(m[5].replace(/,/g, '')) || 0;
+                            const totalUsd = parseFloat(m[7].replace(/,/g, '')) || 0;
+                            if (!netWt && qty > 0 && bagSize > 0) netWt = qty * bagSize;
+
+                            parsed.push({
+                                id: this.nextId++,
+                                name,
+                                nazPcs: 0,
+                                nazCtns: 0,
+                                nazNetWt: 0,
+                                jacmeWtPack: 0,
+                                jacmePackets: 0,
+                                smartQty: qty,
+                                smartNetWt: netWt,
+                                lineTotalUSD: parseFloat(totalUsd.toFixed(2)),
+                                targetGp: this.globalTargetGp,
+                                sellPrice: null,
+                                manualOverride: false
+                            });
+                        }
+                    }
+
+                    if (!parsed.length) throw new Error('Could not parse items from Smart Global PDF.');
+                    this.items = parsed;
+                    this.parseMessage = `Extracted ${parsed.length} rice bag items from Smart Global (15% GP applied).`;
+                },
+
+                // --- 2. JACME AGRO PDF PARSER ---
+                parseJacmeLines(lines) {
                     const parsed = [];
                     const skips = ['JACME', 'NANDI ESTATE', 'GSTIN', 'DETAILED INVOICE', 'DESCRIPTION OF GOODS', 'BANK DETAILS', 'ACCOUNT NAME', 'A/C NUMBER', 'BANK NAME', 'BRANCH NAME', 'IFSC CODE', 'SWIFT CODE', 'PRICES MENTIONED', 'TOTAL AMOUNT', 'FINAL INVOICE', 'TERMS OF PAYMENT', 'DISPATCHED THROUGH', 'RIVER VIEW ROAD', 'SHYER LIMITED'];
 
@@ -789,6 +967,8 @@
                                 nazNetWt: 0,
                                 jacmeWtPack: grams,
                                 jacmePackets: pkts,
+                                smartQty: 0,
+                                smartNetWt: 0,
                                 lineTotalUSD: parseFloat(lineUsd.toFixed(2)),
                                 targetGp: this.globalTargetGp,
                                 sellPrice: null,
@@ -796,9 +976,9 @@
                             });
                         }
                     }
-                    if (!parsed.length) throw new Error('Could not parse items from PDF.');
+                    if (!parsed.length) throw new Error('Could not parse items from JACME PDF.');
                     this.items = parsed;
-                    this.parseMessage = `Extracted ${parsed.length} items (15% GP applied).`;
+                    this.parseMessage = `Extracted ${parsed.length} items from JACME (15% GP applied).`;
                 }
             }
         }).mount('#app');
