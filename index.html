@@ -58,7 +58,7 @@
         <p id="startup-msg" style="margin: 0; color: #64748b; font-size: 14px;">Initializing libraries...</p>
     </div>
 
-    <div id="app" style="display: none;" class="max-w-[1640px] mx-auto space-y-6">
+    <div id="app" style="display: none;" class="max-w-[1680px] mx-auto space-y-6">
 
         <!-- Top Header & Global Controls -->
         <div class="bg-white p-6 rounded-2xl elegant-shadow border border-[#EAE6DF] flex flex-wrap justify-between items-center gap-6 border-t-4 border-t-[#1F4E3D]">
@@ -211,7 +211,7 @@
                 </div>
 
                 <div class="overflow-x-auto">
-                    <table class="w-full text-left border-collapse min-w-[1160px]">
+                    <table class="w-full text-left border-collapse min-w-[1220px]">
                         <thead>
                             <tr class="bg-[#FDFBF7] text-[#8B7355] text-[10px] uppercase tracking-wider border-b-2 border-[#EAE6DF]">
                                 <th class="p-2.5 w-8 text-center">#</th>
@@ -221,9 +221,10 @@
                                 <th v-if="supplier === 'naz'" class="p-2.5 w-16 text-center">Pcs/Ctn</th>
                                 <th v-if="supplier === 'naz'" class="p-2.5 w-16 text-center">Ctns</th>
 
-                                <!-- JACME Columns -->
+                                <!-- JACME Columns (Wt/Pack in g, Pack/Carton, No of Cartons) -->
                                 <th v-if="supplier === 'jacme'" class="p-2.5 w-20 text-center">Wt/Pack(g)</th>
-                                <th v-if="supplier === 'jacme'" class="p-2.5 w-20 text-center">Packets</th>
+                                <th v-if="supplier === 'jacme'" class="p-2.5 w-16 text-center">Pack/Ctn</th>
+                                <th v-if="supplier === 'jacme'" class="p-2.5 w-16 text-center">Cartons</th>
 
                                 <!-- Smart Global Columns -->
                                 <th v-if="supplier === 'smart'" class="p-2.5 w-20 text-center">Qty (Bags)</th>
@@ -243,7 +244,7 @@
                         </thead>
                         <tbody class="divide-y divide-[#EAE6DF] text-sm">
                             <tr v-if="items.length === 0">
-                                <td colspan="16" class="p-12 text-center text-slate-400 text-sm font-medium">No lines loaded. Import an invoice to begin.</td>
+                                <td colspan="17" class="p-12 text-center text-slate-400 text-sm font-medium">No lines loaded. Import an invoice to begin.</td>
                             </tr>
                             <tr v-for="(item, index) in items" :key="item.id" class="hover:bg-[#FCFAF8] transition group">
                                 <td class="p-2 text-center text-xs text-slate-400 font-bold">{{ index + 1 }}</td>
@@ -262,7 +263,8 @@
 
                                 <!-- Jacme Inputs -->
                                 <td v-if="supplier === 'jacme'" class="p-1.5"><input type="number" v-model.number="item.jacmeWtPack" class="input-field text-center text-xs font-semibold p-1"></td>
-                                <td v-if="supplier === 'jacme'" class="p-1.5"><input type="number" v-model.number="item.jacmePackets" class="input-field text-center text-xs font-semibold p-1"></td>
+                                <td v-if="supplier === 'jacme'" class="p-1.5"><input type="number" v-model.number="item.jacmePackCtn" class="input-field text-center text-xs font-semibold p-1"></td>
+                                <td v-if="supplier === 'jacme'" class="p-1.5"><input type="number" v-model.number="item.jacmeCtns" class="input-field text-center text-xs font-semibold p-1"></td>
 
                                 <!-- Smart Global Inputs -->
                                 <td v-if="supplier === 'smart'" class="p-1.5"><input type="number" v-model.number="item.smartQty" class="input-field text-center text-xs font-semibold p-1"></td>
@@ -387,6 +389,8 @@
                                 nazCtns: 60,
                                 nazNetWt: 840,
                                 jacmeWtPack: 400,
+                                jacmePackCtn: 32,
+                                jacmeCtns: 30,
                                 jacmePackets: 960,
                                 smartQty: 50,
                                 smartBagSize: 26,
@@ -448,6 +452,8 @@
                             nazCtns: 0,
                             nazNetWt: 0,
                             jacmeWtPack: 0,
+                            jacmePackCtn: 0,
+                            jacmeCtns: 0,
                             jacmePackets: 0,
                             smartQty: 0,
                             smartBagSize: 0,
@@ -463,17 +469,10 @@
                     },
 
                     // --- WEIGHT & COST CALCULATIONS ---
-                    getItemWeight(item) {
-                        if (this.supplier === 'naz') return parseFloat(item.nazNetWt) || 0;
-                        if (this.supplier === 'smart') {
-                            const net = parseFloat(item.smartNetWt) || 0;
-                            if (net > 0) return net;
-                            return (parseFloat(item.smartQty) || 0) * (parseFloat(item.smartBagSize) || 0);
-                        }
-                        return ((parseFloat(item.jacmeWtPack) || 0) * (parseFloat(item.jacmePackets) || 0)) / 1000;
-                    },
                     getItemPieces(item) {
-                        if (this.supplier === 'naz') return (parseFloat(item.nazPcs) || 0) * (parseFloat(item.nazCtns) || 0);
+                        if (this.supplier === 'naz') {
+                            return (parseFloat(item.nazPcs) || 0) * (parseFloat(item.nazCtns) || 0);
+                        }
                         if (this.supplier === 'smart') {
                             const q = parseFloat(item.smartQty) || 0;
                             if (q > 0) return q;
@@ -481,12 +480,31 @@
                             const sz = parseFloat(item.smartBagSize) || 0;
                             return (net > 0 && sz > 0) ? Math.round(net / sz) : 0;
                         }
+                        // JACME: Pack/Carton * No of Cartons (with fallback to jacmePackets if cartons not entered)
+                        const packCtn = parseFloat(item.jacmePackCtn) || 0;
+                        const ctns = parseFloat(item.jacmeCtns) || 0;
+                        if (packCtn > 0 && ctns > 0) return packCtn * ctns;
                         return parseFloat(item.jacmePackets) || 0;
+                    },
+                    getItemWeight(item) {
+                        if (this.supplier === 'naz') return parseFloat(item.nazNetWt) || 0;
+                        if (this.supplier === 'smart') {
+                            const net = parseFloat(item.smartNetWt) || 0;
+                            if (net > 0) return net;
+                            return (parseFloat(item.smartQty) || 0) * (parseFloat(item.smartBagSize) || 0);
+                        }
+                        // JACME: Wt/Pack (grams) * Total Pieces / 1000
+                        const grams = parseFloat(item.jacmeWtPack) || 0;
+                        const pieces = this.getItemPieces(item);
+                        return (grams * pieces) / 1000;
                     },
                     getUnitWeight(item) {
                         const w = this.getItemWeight(item);
                         const p = this.getItemPieces(item);
-                        return p > 0 ? (w / p) : (parseFloat(item.smartBagSize) || 0);
+                        if (p > 0) return w / p;
+                        if (this.supplier === 'jacme') return (parseFloat(item.jacmeWtPack) || 0) / 1000;
+                        if (this.supplier === 'smart') return parseFloat(item.smartBagSize) || 0;
+                        return 0;
                     },
                     getUnitLandedCost(item) {
                         const weight = this.getItemWeight(item);
@@ -496,6 +514,7 @@
 
                         if (pieces <= 0) return 0;
 
+                        // Work backwards from Total Line Amount (USD) -> NZD + weight-allocated extras / Total Pieces
                         const lineNZD = lineUSD / r;
                         const allocatedExtra = this.totalShipmentWeight > 0
                             ? this.totalExtraCostsNZD * (weight / this.totalShipmentWeight)
@@ -738,6 +757,8 @@
                                     nazCtns: ctns,
                                     nazNetWt: net,
                                     jacmeWtPack: 0,
+                                    jacmePackCtn: 0,
+                                    jacmeCtns: 0,
                                     jacmePackets: 0,
                                     smartQty: 0,
                                     smartBagSize: 0,
@@ -768,7 +789,7 @@
                         const imgData = srcCtx.getImageData(0, 0, w, h);
                         const d = imgData.data;
 
-                        // Detect green header band (e.g. JACME header bar: R < 65, G > 135, B < 100) in upper 35% of page
+                        // Detect green header band (JACME header bar) in upper 35% of page
                         let gMinX = w, gMaxX = 0, gMaxY = 0, gCount = 0;
                         const scanMaxY = Math.floor(h * 0.35);
                         for (let y = Math.floor(h * 0.12); y < scanMaxY; y++) {
@@ -787,11 +808,10 @@
                             }
                         }
 
-                        // Crop tightly to the table if green header detected; otherwise trim outer margins
                         let cropX = 0, cropY = 0, cropW = w, cropH = h;
                         if (gCount > 5 && gMaxX > gMinX + w * 0.25) {
-                            cropX = Math.max(0, gMinX - 12);
-                            cropW = Math.min(w - cropX, (gMaxX - gMinX) + 24);
+                            cropX = Math.max(0, gMinX - 8);
+                            cropW = Math.min(w - cropX, (gMaxX - gMinX) + 16);
                             cropY = Math.max(0, gMaxY + 2);
                             cropH = Math.min(h - cropY, Math.floor(h * 0.84) - cropY);
                         }
@@ -803,7 +823,7 @@
                         const outImg = outCtx.createImageData(cropW, cropH);
                         const od = outImg.data;
 
-                        // Step 1: Binarize — keep dark neutral text as black (#000), turn all neon highlights & backgrounds to white (#FFF)
+                        // Step 1: Binarize — keep dark neutral text as black (1), turn all neon highlights & backgrounds to white (0)
                         const binary = new Uint8Array(cropW * cropH);
                         for (let y = 0; y < cropH; y++) {
                             for (let x = 0; x < cropW; x++) {
@@ -811,33 +831,45 @@
                                 const r = d[sIdx], g = d[sIdx + 1], b = d[sIdx + 2];
                                 const maxC = Math.max(r, g, b);
                                 const minC = Math.min(r, g, b);
-                                const isInk = (r < 135 && g < 135 && b < 135 && (maxC - minC) < 75) ? 1 : 0;
-                                binary[y * cropW + x] = isInk;
+                                binary[y * cropW + x] = (r < 135 && g < 135 && b < 135 && (maxC - minC) < 75) ? 1 : 0;
                             }
                         }
 
-                        // Step 2: Erase vertical grid lines (columns where > 55% of rows are ink)
+                        // Step 2: Detect vertical grid line X-coordinates BEFORE erasing them
+                        const rawVCols = [];
                         for (let x = 0; x < cropW; x++) {
                             let colInk = 0;
-                            for (let y = 0; y < cropH; y++) {
-                                colInk += binary[y * cropW + x];
+                            for (let y = 0; y < cropH; y++) colInk += binary[y * cropW + x];
+                            if (colInk / cropH > 0.50) {
+                                rawVCols.push(x);
                             }
-                            if (colInk / cropH > 0.55) {
-                                for (let dx = -1; dx <= 1; dx++) {
-                                    const tx = x + dx;
-                                    if (tx >= 0 && tx < cropW) {
-                                        for (let y = 0; y < cropH; y++) binary[y * cropW + tx] = 0;
-                                    }
+                        }
+
+                        // Cluster adjacent vertical grid pixels into distinct line X-positions
+                        const vLines = [];
+                        for (const x of rawVCols) {
+                            if (vLines.length === 0 || x - vLines[vLines.length - 1].end > 6) {
+                                vLines.push({ start: x, end: x });
+                            } else {
+                                vLines[vLines.length - 1].end = x;
+                            }
+                        }
+                        const gridXs = vLines.map(v => Math.round((v.start + v.end) / 2));
+
+                        // Erase vertical grid lines from binary image so OCR doesn't read '|'
+                        for (const x of rawVCols) {
+                            for (let dx = -1; dx <= 1; dx++) {
+                                const tx = x + dx;
+                                if (tx >= 0 && tx < cropW) {
+                                    for (let y = 0; y < cropH; y++) binary[y * cropW + tx] = 0;
                                 }
                             }
                         }
 
-                        // Step 3: Erase horizontal grid lines (rows where > 45% of columns are ink)
+                        // Step 3: Erase horizontal grid lines
                         for (let y = 0; y < cropH; y++) {
                             let rowInk = 0;
-                            for (let x = 0; x < cropW; x++) {
-                                rowInk += binary[y * cropW + x];
-                            }
+                            for (let x = 0; x < cropW; x++) rowInk += binary[y * cropW + x];
                             if (rowInk / cropW > 0.45) {
                                 for (let dy = -1; dy <= 1; dy++) {
                                     const ty = y + dy;
@@ -848,7 +880,6 @@
                             }
                         }
 
-                        // Write clean black-on-white pixels
                         for (let i = 0; i < cropW * cropH; i++) {
                             const val = binary[i] ? 0 : 255;
                             const p = i * 4;
@@ -858,7 +889,7 @@
                             od[p + 3] = 255;
                         }
                         outCtx.putImageData(outImg, 0, 0);
-                        return outCanvas;
+                        return { canvas: outCanvas, gridXs, cropW };
                     },
 
                     // --- 2 & 3. UNIFIED PDF ROUTER ---
@@ -894,6 +925,10 @@
                         }
 
                         // Scanned / Vector-Printed PDF (no selectable text layer -> Clean & OCR)
+                        let ocrWordRows = [];
+                        let detectedGridXs = [];
+                        let detectedCropW = 0;
+
                         if (lines.length < 5) {
                             if (!window.Tesseract) throw new Error('OCR library not loaded for scanned PDF.');
                             lines = [];
@@ -908,7 +943,11 @@
                                 const ctx = rawCanvas.getContext('2d');
                                 await page.render({ canvasContext: ctx, viewport }).promise;
 
-                                const cleanCanvas = this.preprocessTableCanvas(rawCanvas);
+                                const { canvas: cleanCanvas, gridXs, cropW } = this.preprocessTableCanvas(rawCanvas);
+                                if (pageNum === 1) {
+                                    detectedGridXs = gridXs;
+                                    detectedCropW = cropW;
+                                }
 
                                 const result = await Tesseract.recognize(cleanCanvas, 'eng', {
                                     tessedit_pageseg_mode: '6',
@@ -920,23 +959,24 @@
                                     }
                                 });
 
-                                // Reconstruct horizontal rows from word bounding boxes for maximum row alignment
                                 if (result.data && Array.isArray(result.data.words) && result.data.words.length > 0) {
                                     const wordRows = [];
                                     for (const w of result.data.words) {
                                         const txt = (w.text || '').replace(/\|/g, '').trim();
                                         if (!txt) continue;
                                         const yMid = (w.bbox.y0 + w.bbox.y1) / 2;
-                                        let r = wordRows.find(row => Math.abs(row.y - yMid) < 12);
+                                        const xMid = (w.bbox.x0 + w.bbox.x1) / 2;
+                                        let r = wordRows.find(row => Math.abs(row.y - yMid) < 13);
                                         if (!r) {
                                             r = { y: yMid, words: [] };
                                             wordRows.push(r);
                                         }
-                                        r.words.push({ x: w.bbox.x0, text: txt });
+                                        r.words.push({ x: xMid, x0: w.bbox.x0, text: txt });
                                     }
                                     wordRows.sort((a, b) => a.y - b.y);
                                     for (const r of wordRows) {
                                         r.words.sort((a, b) => a.x - b.x);
+                                        ocrWordRows.push(r.words);
                                         lines.push(r.words.map(w => w.text).join(' '));
                                     }
                                 } else {
@@ -960,7 +1000,7 @@
                             this.parseSmartGlobalLines(structuredRows, lines);
                         } else if (isJacme || this.supplier === 'jacme') {
                             this.supplier = 'jacme';
-                            this.parseJacmeLines(lines);
+                            this.parseJacmeGridRows(ocrWordRows, detectedGridXs, detectedCropW, lines);
                         } else {
                             this.supplier = 'smart';
                             this.parseSmartGlobalLines(structuredRows, lines);
@@ -1036,6 +1076,8 @@
                                         nazCtns: 0,
                                         nazNetWt: 0,
                                         jacmeWtPack: 0,
+                                        jacmePackCtn: 0,
+                                        jacmeCtns: 0,
                                         jacmePackets: 0,
                                         smartQty: qty,
                                         smartBagSize: bagSize,
@@ -1073,6 +1115,8 @@
                                     nazCtns: 0,
                                     nazNetWt: 0,
                                     jacmeWtPack: 0,
+                                    jacmePackCtn: 0,
+                                    jacmeCtns: 0,
                                     jacmePackets: 0,
                                     smartQty: qty,
                                     smartBagSize: bagSize,
@@ -1090,87 +1134,131 @@
                         this.parseMessage = `Extracted ${parsed.length} items from Smart Global (15% GP applied).`;
                     },
 
-                    // --- 2. JACME AGRO PDF PARSER ---
-                    parseJacmeLines(lines) {
+                    // --- 2. JACME COLUMN-LOCKED GRID PARSER ---
+                    cleanOcrInteger(str) {
+                        // Removes commas, spaces, or misread thousands dots (e.g., "1,904" or "1.904" -> 1904)
+                        const digits = String(str || '').replace(/[^\d]/g, '');
+                        return digits ? parseInt(digits, 10) : 0;
+                    },
+                    cleanOcrCurrency(str) {
+                        let s = String(str || '').replace(/\$/g, '').replace(/,/g, '').replace(/\s+/g, '').trim();
+                        if (!s) return 0;
+                        const dots = (s.match(/\./g) || []).length;
+                        if (dots > 1) {
+                            const parts = s.split('.');
+                            const dec = parts.pop();
+                            s = parts.join('') + '.' + dec;
+                        }
+                        const val = parseFloat(s);
+                        return isNaN(val) ? 0 : val;
+                    },
+                    parseJacmeGridRows(ocrWordRows, gridXs, cropW, fallbackLines) {
                         const parsed = [];
                         const skips = ['JACME', 'NANDI ESTATE', 'GSTIN', 'DETAILED INVOICE', 'DESCRIPTION OF GOODS', 'BANK DETAILS', 'ACCOUNT NAME', 'A/C NUMBER', 'BANK NAME', 'BRANCH NAME', 'IFSC CODE', 'SWIFT CODE', 'PRICES MENTIONED', 'TOTAL AMOUNT', 'FINAL INVOICE', 'TERMS OF PAYMENT', 'DISPATCHED THROUGH', 'RIVER VIEW ROAD', 'SHYER LIMITED'];
 
-                        for (const raw of lines) {
-                            const cleanedLine = raw.replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
-                            if (!cleanedLine || skips.some(k => cleanedLine.toUpperCase().includes(k))) continue;
+                        // Determine the 9 vertical column divider boundaries (10 X-positions)
+                        // [0:SL_start, 1:Desc_start, 2:WtPack_start, 3:PackCtn_start, 4:Ctns_start, 5:FOB_start, 6:FOBOffer_start, 7:Pkts_start, 8:TotAmt_start, 9:Right_edge]
+                        let cols = null;
+                        if (gridXs && gridXs.length >= 10) {
+                            cols = gridXs.slice(-10);
+                        } else if (cropW > 0) {
+                            const ratios = [0.006, 0.080, 0.405, 0.495, 0.570, 0.648, 0.742, 0.822, 0.903, 0.998];
+                            cols = ratios.map(r => Math.round(r * cropW));
+                        }
 
-                            // Match: [Optional SL NO] [Product Name] [Wt/Pack Grams: 2-4 digits] [Remaining numeric columns]
-                            const match = cleanedLine.match(/^(?:\d{1,2}\s+)?([A-Za-zГ][A-Za-z0-9\s().+\-\/&]+?)\s+(\d{2,4})\s+(.+)$/);
-                            if (!match) continue;
+                        if (ocrWordRows && ocrWordRows.length > 0 && cols && cols.length === 10) {
+                            for (const words of ocrWordRows) {
+                                const rowJoined = words.map(w => w.text).join(' ');
+                                const upper = rowJoined.toUpperCase();
+                                if (!rowJoined || skips.some(k => upper.includes(k))) continue;
 
-                            let name = match[1].trim();
-                            // Repair leading "Frozen" if vertical border erasure clipped the 'F'
-                            name = name.replace(/^(?:Гrozen|Trozer|lrozen|rozen)\b/i, 'Frozen');
-
-                            let grams = parseInt(match[2], 10);
-                            if (/1\s*kg/i.test(name)) grams = 1000;
-                            if (/2\s*kg/i.test(name)) grams = 2000;
-
-                            const rest = match[3];
-                            const tokens = [...rest.matchAll(/\$?\s*(\d[\d,.]*)\s*\$?/g)].map(m => m[0].trim());
-                            const dVals = [], iVals = [];
-
-                            for (const tok of tokens) {
-                                const hasDollar = tok.includes('$');
-                                let cleaned = tok.replace(/\$/g, '').replace(/,/g, '').trim();
-                                const dots = (cleaned.match(/\./g) || []).length;
-                                if (dots > 1) {
-                                    const p = cleaned.split('.');
-                                    const d = p.pop();
-                                    cleaned = p.join('') + '.' + d;
+                                // Bucket every word into its exact table column using word center X
+                                const buckets = [[], [], [], [], [], [], [], [], []];
+                                for (const w of words) {
+                                    for (let c = 0; c < 9; c++) {
+                                        if (w.x >= cols[c] - 3 && w.x < cols[c + 1] + 3) {
+                                            buckets[c].push(w.text);
+                                            break;
+                                        }
+                                    }
                                 }
-                                const num = parseFloat(cleaned);
-                                if (isNaN(num)) continue;
-                                if (hasDollar || cleaned.includes('.')) dVals.push(num);
-                                else iVals.push(Math.round(num));
-                            }
-                            if (dVals.length === 0) continue;
 
-                            let lineUsd = dVals[dVals.length - 1];
-                            let pkts = 0;
-                            if (iVals.length >= 3) {
-                                // [Pack/Carton, No of Cartons, No. Packets]
-                                pkts = iVals[iVals.length - 1];
-                            } else if (iVals.length === 2) {
-                                // Either [Pack/Carton, No. Packets] or [Pack/Carton, No of Cartons]
-                                pkts = iVals[1] >= iVals[0] ? iVals[1] : (iVals[0] * iVals[1]);
-                            } else if (iVals.length === 1) {
-                                pkts = iVals[0];
-                            }
+                                let name = buckets[1].join(' ').trim();
+                                if (!name) continue;
+                                // Repair leading "Frozen" if vertical border erasure clipped 'F'
+                                name = name.replace(/^(?:Гrozen|Trozer|lrozen|rozen)\b/i, 'Frozen');
 
-                            // Fix missing decimal point in Total Amount if OCR dropped '.' (e.g. $69760 -> 697.60)
-                            if (pkts > 0 && dVals.length >= 2) {
-                                const unitPrice = dVals[dVals.length - 2];
-                                const expected = pkts * unitPrice;
-                                if (expected > 0 && lineUsd > expected * 20 && Math.abs((lineUsd / 100) - expected) / expected < 0.08) {
-                                    lineUsd = lineUsd / 100;
+                                let wtPackG = this.cleanOcrInteger(buckets[2].join(''));
+                                let packCtn = this.cleanOcrInteger(buckets[3].join(''));
+                                let ctns = this.cleanOcrInteger(buckets[4].join(''));
+                                const fobStd = this.cleanOcrCurrency(buckets[5].join(''));
+                                const fobOffer = this.cleanOcrCurrency(buckets[6].join(''));
+                                let pkts = this.cleanOcrInteger(buckets[7].join(''));
+                                let totalUsd = this.cleanOcrCurrency(buckets[8].join(''));
+
+                                // Must have at least a product name and either price or quantity
+                                if (totalUsd <= 0 && fobOffer <= 0 && pkts <= 0 && ctns <= 0) continue;
+
+                                // Cross-check Wt/Pack against explicit "1Kg" / "2Kg" in product name
+                                if (/1\s*kg/i.test(name) && wtPackG !== 1000) wtPackG = 1000;
+                                if (/2\s*kg/i.test(name) && wtPackG !== 2000) wtPackG = 2000;
+
+                                // Algebraic self-healing check 1: Pack/Carton * No of Cartons == No. Packets
+                                if (packCtn > 0 && ctns > 0) {
+                                    const prod = packCtn * ctns;
+                                    if (pkts === 0 || pkts !== prod) {
+                                        // If pkts matches fobOffer * pkts ≈ totalUsd, repair ctns; otherwise pkts = packCtn * ctns
+                                        if (pkts > 0 && fobOffer > 0 && Math.abs(pkts * fobOffer - totalUsd) < Math.max(3, totalUsd * 0.02)) {
+                                            ctns = Math.round(pkts / packCtn);
+                                        } else {
+                                            pkts = prod;
+                                        }
+                                    }
+                                } else if (pkts > 0 && packCtn > 0 && ctns === 0) {
+                                    ctns = Math.round(pkts / packCtn);
+                                } else if (pkts > 0 && ctns > 0 && packCtn === 0) {
+                                    packCtn = Math.round(pkts / ctns);
                                 }
-                            }
 
-                            if (pkts > 0 || lineUsd > 0) {
+                                // Algebraic self-healing check 2: Repair OCR dropped decimal or missing leading digit in Total Amount
+                                const unitUsd = fobOffer > 0 ? fobOffer : fobStd;
+                                if (pkts > 0 && unitUsd > 0) {
+                                    const expectedUsd = pkts * unitUsd;
+                                    if (totalUsd <= 0) {
+                                        totalUsd = expectedUsd;
+                                    } else if (totalUsd > expectedUsd * 20 && Math.abs((totalUsd / 100) - expectedUsd) / expectedUsd < 0.08) {
+                                        // e.g. $69760 -> $697.60
+                                        totalUsd = totalUsd / 100;
+                                    } else if (expectedUsd > 1000 && totalUsd < expectedUsd * 0.5) {
+                                        // e.g. "$1,219.20" read as "219.20" (dropped leading '1,')
+                                        const leadThousands = Math.round((expectedUsd - totalUsd) / 1000) * 1000;
+                                        if (leadThousands > 0 && Math.abs((totalUsd + leadThousands) - expectedUsd) / expectedUsd < 0.05) {
+                                            totalUsd = totalUsd + leadThousands;
+                                        }
+                                    }
+                                }
+
                                 parsed.push({
                                     id: this.nextId++,
                                     name,
                                     nazPcs: 0,
                                     nazCtns: 0,
                                     nazNetWt: 0,
-                                    jacmeWtPack: grams,
+                                    jacmeWtPack: wtPackG,
+                                    jacmePackCtn: packCtn,
+                                    jacmeCtns: ctns,
                                     jacmePackets: pkts,
                                     smartQty: 0,
                                     smartBagSize: 0,
                                     smartNetWt: 0,
-                                    lineTotalUSD: parseFloat(lineUsd.toFixed(2)),
+                                    lineTotalUSD: parseFloat(totalUsd.toFixed(2)),
                                     targetGp: this.globalTargetGp,
                                     sellPrice: null,
                                     manualOverride: false
                                 });
                             }
                         }
+
                         if (!parsed.length) throw new Error('Could not parse items from JACME PDF.');
                         this.items = parsed;
                         this.parseMessage = `Extracted ${parsed.length} items from JACME (15% GP applied).`;
