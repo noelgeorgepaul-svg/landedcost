@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Landed Cost & Margin Portal - Premium</title>
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- SheetJS for Excel -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+    <!-- PDF.js & Tesseract for PDF Parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <!-- jsPDF & AutoTable for PDF Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js"></script>
+    <style>
+        [v-cloak] { display: none; }
+        body { background-color: #FDFBF7; /* Warm light sand */ }
+        .input-field {
+            width: 100%;
+            border: 1px solid #E2E8F0;
+            border-radius: 0.5rem;
+            padding: 0.4rem 0.6rem;
+            font-size: 0.875rem;
+            background-color: #FAFAF9;
+            transition: all 0.2s;
+        }
+        .input-field:focus {
+            outline: none;
+            border-color: #1F4E3D;
+            box-shadow: 0 0 0 2px rgba(31, 78, 61, 0.2);
+            background-color: #FFFFFF;
+        }
+        .elegant-shadow {
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
+        }
+    </style>
+</head>
+<body class="text-slate-800 p-4 md:p-6 min-h-screen font-sans">
+    <div id="app" v-cloak class="max-w-[1550px] mx-auto space-y-6">
+
+        <!-- Top Header & Global Controls -->
+        <div class="bg-white p-6 rounded-2xl elegant-shadow border border-[#EAE6DF] flex flex-wrap justify-between items-center gap-6 border-t-4 border-t-[#1F4E3D]">
+            <div>
+                <h1 class="text-3xl font-bold text-[#1F4E3D] tracking-tight">Landed Cost Portal</h1>
+                <p class="text-sm text-slate-500 mt-1 font-medium">Elegant margin tracking & weight-allocated costing.</p>
+            </div>
+
+            <div class="flex flex-wrap gap-5 items-center">
+                <!-- Supplier Selector -->
+                <div class="flex items-center gap-3 bg-[#F4F1EB] px-4 py-2.5 rounded-xl border border-[#EAE6DF]">
+                    <span class="font-semibold text-sm text-[#3E3A35]">Format:</span>
+                    <label class="flex items-center gap-1.5 cursor-pointer">
+                        <input type="radio" value="naz" v-model="supplier" class="accent-[#1F4E3D] w-4 h-4">
+                        <span class="text-sm font-semibold text-[#1F4E3D]">Naz (Excel)</span>
+                    </label>
+                    <label class="flex items-center gap-1.5 cursor-pointer pl-2">
+                        <input type="radio" value="jacme" v-model="supplier" class="accent-[#1F4E3D] w-4 h-4">
+                        <span class="text-sm font-semibold text-[#1F4E3D]">JACME (PDF)</span>
+                    </label>
+                </div>
+
+                <!-- Exchange Rate (NZD to USD) -->
+                <div class="flex items-center gap-2 bg-[#213955] px-4 py-2.5 rounded-xl shadow-inner">
+                    <label class="font-semibold text-sm text-white">1 NZD =</label>
+                    <input type="number" step="0.0001" v-model.number="rateNzdToUsd" class="w-24 px-2 py-1 rounded bg-[#16273B] text-white border border-[#3A5372] text-right font-bold focus:outline-none focus:border-white">
+                    <span class="font-semibold text-sm text-white">USD</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- KPI Summary Strip -->
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div class="bg-white p-5 rounded-2xl elegant-shadow border border-[#EAE6DF]">
+                <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Goods Total (USD)</div>
+                <div class="text-2xl font-black text-slate-800 mt-1">${{ formatNumber(totalGoodsUSD) }}</div>
+            </div>
+            <div class="bg-white p-5 rounded-2xl elegant-shadow border border-[#EAE6DF]">
+                <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Goods Total (NZD)</div>
+                <div class="text-2xl font-black text-slate-800 mt-1">${{ formatNumber(totalGoodsNZD) }}</div>
+            </div>
+            <div class="bg-white p-5 rounded-2xl elegant-shadow border border-[#EAE6DF]">
+                <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Total Extra Costs (NZD)</div>
+                <div class="text-2xl font-black text-[#8B5A2B] mt-1">${{ formatNumber(totalExtraCostsNZD) }}</div>
+            </div>
+            <div class="bg-white p-5 rounded-2xl elegant-shadow border border-[#EAE6DF] bg-gradient-to-br from-[#1F4E3D] to-[#123126]">
+                <div class="text-[11px] font-bold uppercase tracking-wider text-[#A5C2B4]">Total Landed (NZD)</div>
+                <div class="text-2xl font-black text-white mt-1">${{ formatNumber(totalGoodsNZD + totalExtraCostsNZD) }}</div>
+            </div>
+            <div class="bg-white p-5 rounded-2xl elegant-shadow border border-[#EAE6DF] col-span-2 md:col-span-1">
+                <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Shipment Weight</div>
+                <div class="text-2xl font-black text-[#213955] mt-1">{{ formatNumber(totalShipmentWeight) }} <span class="text-lg">kg</span></div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-5 gap-6">
+            <!-- Left Sidebar -->
+            <div class="space-y-6 xl:col-span-1">
+                <!-- Upload Card -->
+                <div class="bg-white p-5 rounded-2xl elegant-shadow border border-[#EAE6DF]">
+                    <h2 class="text-sm font-bold uppercase tracking-wider text-[#1F4E3D] mb-4">1. Import Invoice</h2>
+                    <input ref="fileInput" type="file" :accept="supplier === 'naz' ? '.xlsx,.xls,.csv,.pdf' : '.pdf,.xlsx,.xls,.csv'" @change="handleFileUpload" class="hidden">
+                    
+                    <div @click="$refs.fileInput.click()" @dragover.prevent="isDragging = true" @dragleave.prevent="isDragging = false" @drop.prevent="handleDrop"
+                        :class="['border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition', isDragging ? 'border-[#1F4E3D] bg-[#F2F7F5]' : 'border-slate-300 hover:border-[#213955] hover:bg-slate-50']">
+                        <i :class="supplier === 'naz' ? 'fa-solid fa-file-excel text-[#1F4E3D]' : 'fa-solid fa-file-pdf text-[#8B2B2B]'" class="text-3xl mb-3"></i>
+                        <p class="text-sm font-bold text-slate-700">Click or drop file</p>
+                        <p class="text-xs text-slate-400 mt-1">{{ supplier === 'naz' ? '.xlsx / .xls' : '.pdf' }}</p>
+                    </div>
+
+                    <div v-if="isParsing" class="mt-4 p-3 bg-[#F2F7F5] border border-[#CDE0D7] rounded-lg">
+                        <div class="flex items-center gap-2 text-xs font-bold text-[#1F4E3D]"><i class="fa-solid fa-spinner fa-spin"></i><span>{{ parseStatus }}</span></div>
+                        <div v-if="parseProgress > 0" class="w-full bg-[#CDE0D7] rounded-full h-1.5 mt-2">
+                            <div class="bg-[#1F4E3D] h-1.5 rounded-full transition-all" :style="{ width: parseProgress + '%' }"></div>
+                        </div>
+                    </div>
+                    <div v-if="parseMessage && !isParsing" :class="['mt-4 p-3 rounded-lg text-xs font-semibold border', parseError ? 'bg-rose-50 border-rose-200 text-rose-700' : 'bg-emerald-50 border-emerald-200 text-emerald-800']">
+                        <i :class="parseError ? 'fa-solid fa-circle-exclamation' : 'fa-solid fa-circle-check'"></i> {{ parseMessage }}
+                    </div>
+                </div>
+
+                <!-- Additional Costs Card -->
+                <div class="bg-white p-5 rounded-2xl elegant-shadow border border-[#EAE6DF]">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-sm font-bold uppercase tracking-wider text-[#1F4E3D]">2. Extra Costs</h2>
+                        <button @click="addExtraCost" class="text-[#213955] hover:bg-[#F2F7F5] p-1.5 rounded transition" title="Add Cost"><i class="fa-solid fa-plus"></i></button>
+                    </div>
+
+                    <div class="space-y-3 mb-4">
+                        <div v-for="(cost, index) in extraCosts" :key="index" class="flex gap-2 items-center bg-[#FDFBF7] p-2 rounded-lg border border-[#EAE6DF]">
+                            <div class="flex-1 space-y-2">
+                                <input type="text" v-model="cost.name" placeholder="e.g. Customs" class="input-field text-xs font-semibold !p-1.5 !bg-transparent !border-b !border-0 !rounded-none focus:!border-[#1F4E3D] !shadow-none">
+                                <div class="flex gap-2">
+                                    <select v-model="cost.currency" class="border border-slate-300 rounded px-1 text-xs font-bold bg-white focus:outline-none">
+                                        <option value="NZD">NZD</option>
+                                        <option value="USD">USD</option>
+                                    </select>
+                                    <input type="number" step="0.01" v-model.number="cost.amount" placeholder="0.00" class="input-field !p-1 text-right text-xs font-bold">
+                                </div>
+                            </div>
+                            <button @click="removeExtraCost(index)" class="text-slate-300 hover:text-rose-600 px-2 transition"><i class="fa-solid fa-trash-can text-sm"></i></button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Table Area -->
+            <div class="xl:col-span-4 bg-white rounded-2xl elegant-shadow border border-[#EAE6DF] flex flex-col overflow-hidden">
+                <div class="px-6 py-4 border-b border-[#EAE6DF] flex flex-wrap justify-between items-center gap-4 bg-gradient-to-r from-[#F9F8F6] to-white">
+                    <div>
+                        <h2 class="text-lg font-black text-[#213955]">Product Line Calculations</h2>
+                        <p class="text-xs text-slate-500 font-medium">Fine-tune weights, view backward-calculated unit weights, and set GP targets.</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button @click="applyAllTargets" class="bg-[#1F4E3D] hover:bg-[#16382B] text-white px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-md">
+                            <i class="fa-solid fa-check-double"></i> Apply All Target Prices
+                        </button>
+                        <button @click="exportToPDF" class="bg-[#213955] hover:bg-[#16273B] text-white px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-md">
+                            <i class="fa-solid fa-file-pdf"></i> Export PDF
+                        </button>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse min-w-[1300px]">
+                        <thead>
+                            <tr class="bg-[#FDFBF7] text-[#8B7355] text-[10px] uppercase tracking-widest border-b-2 border-[#EAE6DF]">
+                                <th class="p-3 w-8 text-center">#</th>
+                                <th class="p-3 min-w-[280px]">Product Name</th>
+                                <!-- Naz Foods Columns -->
+                                <th v-if="supplier === 'naz'" class="p-3 w-16 text-center">Pcs/Ctn</th>
+                                <th v-if="supplier === 'naz'" class="p-3 w-16 text-center">Ctns</th>
+                                <!-- JACME Columns -->
+                                <th v-if="supplier === 'jacme'" class="p-3 w-20 text-center">Wt/Pack(g)</th>
+                                <th v-if="supplier === 'jacme'" class="p-3 w-20 text-center">Packets</th>
+
+                                <th class="p-3 w-20 text-center">Net Wt(kg)</th>
+                                <th class="p-3 w-20 text-center bg-[#F4F1EB] text-[#213955]">Wt/Pc (kg)</th>
+                                <th class="p-3 w-24 text-right">Total USD</th>
+                                <th class="p-3 w-16 text-right">Pcs</th>
+                                <th class="p-3 w-24 text-right bg-[#E8F0EC] text-[#1F4E3D] border-l border-[#CDE0D7]">Unit Landed(NZD)</th>
+                                <th class="p-3 w-20 text-center bg-[#EDF2F7] text-[#213955] border-l border-[#D3DEE8]">Target GP</th>
+                                <th class="p-3 w-24 text-right bg-[#EDF2F7] text-[#213955]">Target Price</th>
+                                <th class="p-3 w-28 text-right">Sell Price(NZD)</th>
+                                <th class="p-3 w-16 text-right">Actual GP%</th>
+                                <th class="p-3 w-10"></th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-[#EAE6DF] text-sm">
+                            <tr v-if="items.length === 0">
+                                <td colspan="15" class="p-12 text-center text-slate-400 text-sm font-medium">No lines loaded. Import an invoice to begin.</td>
+                            </tr>
+                            <tr v-for="(item, index) in items" :key="item.id" class="hover:bg-[#FCFAF8] transition group">
+                                <td class="p-2 text-center text-xs text-slate-400 font-bold">{{ index + 1 }}</td>
+                                <td class="p-2">
+                                    <textarea v-model="item.name" rows="1" class="input-field text-xs font-bold text-slate-700 min-w-[280px] resize-none overflow-hidden whitespace-normal break-words leading-tight" style="min-height: 38px;"></textarea>
+                                </td>
+
+                                <!-- Naz Inputs -->
+                                <td v-if="supplier === 'naz'" class="p-2"><input type="number" v-model.number="item.nazPcs" class="input-field text-center text-xs font-semibold p-1"></td>
+                                <td v-if="supplier === 'naz'" class="p-2"><input type="number" v-model.number="item.nazCtns" class="input-field text-center text-xs font-semibold p-1"></td>
+                                
+                                <!-- Jacme Inputs -->
+                                <td v-if="supplier === 'jacme'" class="p-2"><input type="number" v-model.number="item.jacmeWtPack" class="input-field text-center text-xs font-semibold p-1"></td>
+                                <td v-if="supplier === 'jacme'" class="p-2"><input type="number" v-model.number="item.jacmePackets" class="input-field text-center text-xs font-semibold p-1"></td>
+                                
+                                <!-- Net Weight -->
+                                <td class="p-2">
+                                    <input v-if="supplier === 'naz'" type="number" step="0.001" v-model.number="item.nazNetWt" class="input-field text-center text-xs font-bold text-[#8B5A2B] p-1">
+                                    <div v-else class="text-center text-xs font-bold text-[#8B5A2B] p-1">{{ formatNumber(getItemWeight(item)) }}</div>
+                                </td>
+
+                                <!-- Wt/Piece Backwards Calc -->
+                                <td class="p-2 text-center bg-[#F4F1EB]/50 text-xs font-black text-[#213955]">
+                                    {{ getUnitWeight(item) > 0 ? getUnitWeight(item).toFixed(3) : '0.000' }}
+                                </td>
+
+                                <!-- Total USD -->
+                                <td class="p-2"><input type="number" step="0.01" v-model.number="item.lineTotalUSD" class="input-field text-right text-xs font-bold p-1"></td>
+
+                                <!-- Pcs -->
+                                <td class="p-2 text-right text-xs font-bold text-slate-500">{{ getItemPieces(item).toLocaleString() }}</td>
+
+                                <!-- Unit Landed NZD -->
+                                <td class="p-2 bg-[#E8F0EC]/50 text-right font-black text-[#1F4E3D] text-xs border-l border-[#CDE0D7]">
+                                    ${{ formatUnit(getUnitLandedCost(item)) }}
+                                </td>
+
+                                <!-- Target GP Dropdown -->
+                                <td class="p-2 bg-[#EDF2F7]/50 text-center border-l border-[#D3DEE8]">
+                                    <select v-model.number="item.targetGp" class="bg-white border border-[#B3C7DB] rounded px-1.5 py-1 text-xs font-bold text-[#213955] cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#213955]">
+                                        <option value="0.15">15%</option>
+                                        <option value="0.20">20%</option>
+                                        <option value="0.25">25%</option>
+                                    </select>
+                                </td>
+
+                                <!-- Target Price -->
+                                <td class="p-2 bg-[#EDF2F7]/50 text-right font-black text-[#213955] text-xs">
+                                    <div class="flex justify-end items-center gap-2">
+                                        ${{ formatNumber(getTargetPrice(item)) }}
+                                        <button @click="applyTarget(item)" class="text-[#213955] hover:text-white hover:bg-[#213955] border border-[#213955] rounded px-1 py-0.5 text-[9px] uppercase tracking-wider transition" title="Copy to Sell Price">Set</button>
+                                    </div>
+                                </td>
+
+                                <!-- Sell Price -->
+                                <td class="p-2"><input type="number" step="0.01" v-model.number="item.sellPrice" class="input-field text-right text-xs font-black text-[#8B5A2B] bg-[#FFFBF0] border-[#E8DCC4] focus:border-[#8B5A2B] p-1.5"></td>
+
+                                <!-- Actual GP -->
+                                <td class="p-2 text-right font-black text-xs" :class="getGpColor(item)">
+                                    {{ item.sellPrice > 0 ? formatNumber(getGpPercentage(item)) + '%' : '—' }}
+                                </td>
+
+                                <td class="p-2 text-center">
+                                    <button @click="removeItem(index)" class="text-slate-300 hover:text-rose-500 transition opacity-0 group-hover:opacity-100"><i class="fa-solid fa-xmark"></i></button>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="p-4 bg-[#F9F8F6] border-t border-[#EAE6DF] flex justify-between items-center rounded-b-2xl">
+                    <button @click="addItem" class="bg-white border border-[#EAE6DF] hover:border-[#1F4E3D] hover:text-[#1F4E3D] text-slate-600 px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 elegant-shadow">
+                        <i class="fa-solid fa-plus"></i> Add Blank Row
+                    </button>
+                    <span class="text-xs font-bold text-slate-400 tracking-wider">{{ items.length }} LINES</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configure PDF.js worker
+        if (window.pdfjsLib) { pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }
+        const { createApp } = Vue;
+
+        createApp({
+            data() {
+                return {
+                    supplier: 'naz',
+                    rateNzdToUsd: 0.60, // 1 NZD = 0.60 USD
+                    nextId: 2,
+                    isDragging: false, isParsing: false, parseStatus: '', parseProgress: 0, parseMessage: '', parseError: false,
+                    extraCosts: [
+                        { name: 'Customs & Duty', currency: 'NZD', amount: 0 },
+                        { name: 'Freight (Invoice)', currency: 'USD', amount: 0 }
+                    ],
+                    items: [
+                        { id: 1, name: 'Sample Elegant Item (Import to clear)', nazPcs: 14, nazCtns: 60, nazNetWt: 840, jacmeWtPack: 400, jacmePackets: 960, lineTotalUSD: 2346.00, targetGp: 0.15, sellPrice: 0 }
+                    ]
+                };
+            },
+            computed: {
+                totalGoodsUSD() { return this.items.reduce((sum, i) => sum + (parseFloat(i.lineTotalUSD) || 0), 0); },
+                totalGoodsNZD() { 
+                    const r = parseFloat(this.rateNzdToUsd) || 1;
+                    return this.totalGoodsUSD / r; 
+                },
+                totalExtraCostsNZD() {
+                    const r = parseFloat(this.rateNzdToUsd) || 1;
+                    return this.extraCosts.reduce((sum, c) => {
+                        const amt = parseFloat(c.amount) || 0;
+                        return sum + (c.currency === 'USD' ? amt / r : amt);
+                    }, 0);
+                },
+                totalShipmentWeight() { return this.items.reduce((sum, i) => sum + this.getItemWeight(i), 0); }
+            },
+            methods: {
+                formatNumber(val) { return (isNaN(val) || !isFinite(val)) ? '0.00' : parseFloat(val).toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); },
+                formatUnit(val) { return (isNaN(val) || !isFinite(val)) ? '0.000' : parseFloat(val).toFixed(3); },
+                
+                addExtraCost() { this.extraCosts.push({ name: '', currency: 'NZD', amount: 0 }); },
+                removeExtraCost(i) { this.extraCosts.splice(i, 1); },
+                addItem() { this.items.push({ id: this.nextId++, name: '', nazPcs: 0, nazCtns: 0, nazNetWt: 0, jacmeWtPack: 0, jacmePackets: 0, lineTotalUSD: 0, targetGp: 0.15, sellPrice: 0 }); },
+                removeItem(i) { this.items.splice(i, 1); },
+                
+                getItemWeight(item) {
+                    if (this.supplier === 'naz') return parseFloat(item.nazNetWt) || 0;
+                    return ((parseFloat(item.jacmeWtPack) || 0) * (parseFloat(item.jacmePackets) || 0)) / 1000;
+                },
+                getItemPieces(item) {
+                    if (this.supplier === 'naz') return (parseFloat(item.nazPcs) || 0) * (parseFloat(item.nazCtns) || 0);
+                    return parseFloat(item.jacmePackets) || 0;
+                },
+                getUnitWeight(item) {
+                    const w = this.getItemWeight(item);
+                    const p = this.getItemPieces(item);
+                    return p > 0 ? (w / p) : 0;
+                },
+                getUnitLandedCost(item) {
+                    const weight = this.getItemWeight(item);
+                    const pieces = this.getItemPieces(item);
+                    const lineUSD = parseFloat(item.lineTotalUSD) || 0;
+                    const r = parseFloat(this.rateNzdToUsd) || 1;
+
+                    if (pieces <= 0) return 0;
+
+                    const lineNZD = lineUSD / r;
+                    const allocatedExtra = this.totalShipmentWeight > 0 ? this.totalExtraCostsNZD * (weight / this.totalShipmentWeight) : 0;
+                    return (lineNZD + allocatedExtra) / pieces;
+                },
+                getTargetPrice(item) {
+                    const cost = this.getUnitLandedCost(item);
+                    const gp = parseFloat(item.targetGp) || 0.15;
+                    return cost > 0 ? (cost / (1 - gp)) : 0;
+                },
+                getGpPercentage(item) {
+                    const sell = parseFloat(item.sellPrice) || 0;
+                    const cost = this.getUnitLandedCost(item);
+                    return sell > 0 ? ((sell - cost) / sell) * 100 : 0;
+                },
+                getGpColor(item) {
+                    if (!item.sellPrice || item.sellPrice <= 0) return 'text-slate-400';
+                    const actual = this.getGpPercentage(item);
+                    const target = (parseFloat(item.targetGp) || 0.15) * 100;
+                    return actual >= (target - 0.1) ? 'text-[#1F4E3D]' : 'text-[#8B2B2B]';
+                },
+                applyTarget(item) { item.sellPrice = parseFloat(this.getTargetPrice(item).toFixed(2)); },
+                applyAllTargets() { this.items.forEach(i => { if(this.getTargetPrice(i) > 0) this.applyTarget(i); }); },
+
+                // --- EXPORT PDF (Elegant Landscape) ---
+                exportToPDF() {
+                    const { jsPDF } = window.jspdf;
+                    const doc = new jsPDF('landscape');
+                    
+                    // Title
+                    doc.setFontSize(18);
+                    doc.setTextColor(31, 78, 61); // Dark Forest
+                    doc.text('Landed Cost & Margin Report', 14, 20);
+                    
+                    doc.setFontSize(10);
+                    doc.setTextColor(100, 100, 100);
+                    doc.text(`Supplier: ${this.supplier === 'naz' ? 'Naz Foods' : 'JACME Agro'}   |   Rate: 1 NZD = ${this.rateNzdToUsd} USD   |   Generated: ${new Date().toLocaleDateString()}`, 14, 28);
+
+                    const body = this.items.map((i, idx) => [
+                        idx + 1,
+                        i.name,
+                        this.getItemPieces(i).toLocaleString(),
+                        this.getItemWeight(i).toFixed(2),
+                        this.getUnitWeight(i).toFixed(3),
+                        '$' + (parseFloat(i.lineTotalUSD)||0).toFixed(2),
+                        '$' + this.getUnitLandedCost(i).toFixed(4),
+                        ((i.targetGp||0.15) * 100) + '%',
+                        '$' + this.getTargetPrice(i).toFixed(2),
+                        '$' + (parseFloat(i.sellPrice)||0).toFixed(2),
+                        i.sellPrice > 0 ? this.getGpPercentage(i).toFixed(1) + '%' : '-'
+                    ]);
+
+                    doc.autoTable({
+                        startY: 35,
+                        head: [['#', 'Product Name', 'Total Pcs', 'Net Wt(kg)', 'Wt/Pc(kg)', 'Total(USD)', 'Unit Cost(NZD)', 'Target GP', 'Target Price', 'Sell Price(NZD)', 'Actual GP%']],
+                        body: body,
+                        theme: 'grid',
+                        headStyles: { fillColor: [31, 78, 61], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 },
+                        styles: { fontSize: 8, cellPadding: 3, overflow: 'linebreak' },
+                        columnStyles: {
+                            0: { cellWidth: 10, halign: 'center' },
+                            1: { cellWidth: 70 }, // Wide column for product names, auto-wraps cleanly
+                            2: { halign: 'right' },
+                            3: { halign: 'center' },
+                            4: { halign: 'center' },
+                            5: { halign: 'right' },
+                            6: { halign: 'right', fillColor: [242, 247, 245], textColor: [31,78,61], fontStyle: 'bold' },
+                            7: { halign: 'center' },
+                            8: { halign: 'right' },
+                            9: { halign: 'right', fontStyle: 'bold' },
+                            10: { halign: 'right', fontStyle: 'bold' }
+                        },
+                        alternateRowStyles: { fillColor: [253, 251, 247] }
+                    });
+
+                    // Summary Block at bottom
+                    const finalY = doc.lastAutoTable.finalY + 10;
+                    doc.setFontSize(10);
+                    doc.setTextColor(33, 57, 85); // Dark River
+                    doc.text(`Total Goods (USD): $${this.formatNumber(this.totalGoodsUSD)}`, 14, finalY);
+                    doc.text(`Total Goods (NZD): $${this.formatNumber(this.totalGoodsNZD)}`, 14, finalY + 6);
+                    doc.text(`Total Extra Costs (NZD): $${this.formatNumber(this.totalExtraCostsNZD)}`, 80, finalY);
+                    doc.text(`Total Landed (NZD): $${this.formatNumber(this.totalGoodsNZD + this.totalExtraCostsNZD)}`, 80, finalY + 6);
+                    
+                    doc.save(`Landed_Cost_${this.supplier}_${new Date().toISOString().slice(0,10)}.pdf`);
+                },
+
+                // --- FILE UPLOAD HANDLING (Same parsing logic as v1) ---
+                handleDrop(e) { this.isDragging = false; const f = e.dataTransfer?.files?.[0]; if (f) this.processFile(f); },
+                handleFileUpload(e) { const f = e.target?.files?.[0]; if (f) this.processFile(f); e.target.value = ''; },
+                async processFile(file) {
+                    this.parseMessage = ''; this.parseError = false; this.isParsing = true; this.parseProgress = 10;
+                    const ext = file.name.split('.').pop().toLowerCase();
+                    try {
+                        if (['xlsx', 'xls', 'csv'].includes(ext)) {
+                            this.supplier = 'naz'; await this.parseNazExcel(file);
+                        } else if (ext === 'pdf') {
+                            this.supplier = 'jacme'; await this.parseJacmePdf(file);
+                        } else throw new Error('Unsupported format.');
+                    } catch (err) {
+                        this.parseError = true; this.parseMessage = err.message || 'Parse failed.';
+                    } finally { this.isParsing = false; this.parseProgress = 0; }
+                },
+
+                async parseNazExcel(file) {
+                    this.parseStatus = 'Reading Excel...'; this.parseProgress = 40;
+                    const buffer = await file.arrayBuffer();
+                    const wb = XLSX.read(buffer, { type: 'array' });
+                    const sheetName = wb.SheetNames.find(n => n.toUpperCase().includes('INVOICE')) || wb.SheetNames[0];
+                    const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: '' });
+
+                    let headerIdx = -1, colMap = { desc: 3, packing: 5, netWt: 7, cartons: 8, totalUsd: 10 };
+                    for (let r = 0; r < Math.min(rows.length, 45); r++) {
+                        const rowStr = rows[r].map(c => String(c).toUpperCase().trim());
+                        const dCol = rowStr.findIndex(c => c.includes('DESCRIPTION'));
+                        if (dCol !== -1) {
+                            headerIdx = r; colMap.desc = dCol;
+                            const pCol = rowStr.findIndex(c => c.includes('PACKING'));
+                            const nCol = rowStr.findIndex(c => c === 'NET WEIGHT' || c.includes('NET WEIGHT'));
+                            const cCol = rowStr.findIndex(c => c.includes('CARTON') && !c.includes('PER'));
+                            const aCol = rowStr.findIndex(c => c.includes('TOTAL AMT') || c.includes('AMOUNT'));
+                            if (pCol !== -1) colMap.packing = pCol;
+                            if (nCol !== -1) colMap.netWt = nCol;
+                            if (cCol !== -1) colMap.cartons = cCol;
+                            if (aCol !== -1) colMap.totalUsd = aCol;
+                            break;
+                        }
+                    }
+                    if (headerIdx === -1) throw new Error('Header row not found.');
+
+                    const parsed = [], charges = [];
+                    for (let r = headerIdx + 1; r < rows.length; r++) {
+                        const desc = String(rows[r][colMap.desc] || '').trim();
+                        if (!desc || ['TOTAL', 'NET WT', 'GROSS WT', 'DATA LOGGER'].some(k => desc.toUpperCase().startsWith(k))) continue;
+
+                        const packRaw = String(rows[r][colMap.packing] || '').trim();
+                        const ctns = parseFloat(rows[r][colMap.cartons]) || 0;
+                        const net = parseFloat(rows[r][colMap.netWt]) || 0;
+                        const usd = parseFloat(rows[r][colMap.totalUsd]) || 0;
+
+                        if (!packRaw && ctns === 0 && usd > 0) { charges.push({ name: desc, currency: 'USD', amount: usd }); continue; }
+                        if (ctns > 0 || usd > 0) {
+                            parsed.push({
+                                id: this.nextId++, name: desc,
+                                nazPcs: this.extractNazPieces(packRaw), nazCtns: ctns, nazNetWt: net,
+                                jacmeWtPack: 0, jacmePackets: 0,
+                                lineTotalUSD: usd, targetGp: 0.15, sellPrice: 0
+                            });
+                        }
+                    }
+                    if (!parsed.length) throw new Error('No product lines found.');
+                    this.items = parsed;
+                    this.extraCosts = this.extraCosts.filter(c => !c.fromInvoice);
+                    charges.forEach(c => this.extraCosts.unshift({ ...c, fromInvoice: true }));
+                    this.parseMessage = `Loaded ${parsed.length} lines.`;
+                },
+                extractNazPieces(str) { const m = str.match(/[\d.]+\s*(?:KG|GM|G|ML|L)?\s*[xX×*]\s*(\d+)/i); return m ? parseInt(m[1], 10) : 1; },
+
+                async parseJacmePdf(file) {
+                    this.parseStatus = 'Reading PDF text...'; this.parseProgress = 20;
+                    const buffer = await file.arrayBuffer();
+                    const pdf = await pdfjsLib.getDocument({ data: buffer }).promise;
+                    let lines = [];
+                    for (let i = 1; i <= pdf.numPages; i++) {
+                        const page = await pdf.getPage(i);
+                        const content = await page.getTextContent();
+                        if (content.items && content.items.length > 20) {
+                            const rows = [];
+                            content.items.forEach(it => {
+                                const str = it.str.trim(); if (!str) return;
+                                const y = it.transform[5], x = it.transform[4];
+                                let r = rows.find(row => Math.abs(row.y - y) < 4);
+                                if (!r) { r = { y, cells: [] }; rows.push(r); }
+                                r.cells.push({ x, str });
+                            });
+                            rows.sort((a, b) => b.y - a.y);
+                            lines.push(...rows.map(r => { r.cells.sort((a,b) => a.x - b.x); return r.cells.map(c => c.str).join(' '); }));
+                        }
+                    }
+                    if (lines.length < 5) throw new Error('No selectable text. Ensure this is the original Digital PDF, not a printed scan.');
+
+                    const parsed = [];
+                    const skips = ['JACME', 'GSTIN', 'INVOICE', 'BANK', 'ACCOUNT', 'IFSC', 'SWIFT', 'TOTAL', 'TERMS', 'SHYER'];
+                    
+                    for (const raw of lines) {
+                        if (skips.some(k => raw.toUpperCase().includes(k))) continue;
+                        if (!/[\d.,]+\s*\$|\$\s*[\d.,]+/.test(raw)) continue;
+                        const match = raw.match(/^(?:\d+\s+)?([A-Za-z][A-Za-z0-9\s().+\-\/]+?)\s+(\d{2,4})\s+(.+)$/);
+                        if (!match) continue;
+
+                        let name = match[1].trim();
+                        let grams = parseInt(match[2], 10);
+                        if (/1\s*kg/i.test(name)) grams = 1000;
+                        if (/2\s*kg/i.test(name)) grams = 2000;
+
+                        const curTokens = [...match[3].matchAll(/\$?\s*(\d[\d,.]*)\s*\$?/g)].map(m => m[0].trim());
+                        const dVals = [], iVals = [];
+                        for (const tok of curTokens) {
+                            let cleaned = tok.replace(/\$/g, '').replace(/,/g, '').trim();
+                            const dots = (cleaned.match(/\./g) || []).length;
+                            if (dots > 1) { const p = cleaned.split('.'); const d = p.pop(); cleaned = p.join('') + '.' + d; }
+                            const num = parseFloat(cleaned);
+                            if (isNaN(num)) continue;
+                            if (tok.includes('$') || cleaned.includes('.')) dVals.push(num); else iVals.push(Math.round(num));
+                        }
+                        if (dVals.length === 0) continue;
+
+                        let lineUsd = dVals[dVals.length - 1];
+                        let pkts = iVals.length >= 3 ? iVals[iVals.length - 1] : (iVals.length === 2 ? iVals[1] : (iVals.length === 1 ? iVals[0] : 0));
+                        
+                        // Fix Tesseract missing decimal point on Line Total if detected
+                        if (pkts > 0 && dVals.length >= 2) {
+                            const expected = pkts * dVals[dVals.length - 2];
+                            if (lineUsd > expected * 20) lineUsd = lineUsd / 100;
+                        }
+                        if (pkts > 0 || lineUsd > 0) {
+                            parsed.push({ id: this.nextId++, name, nazPcs: 0, nazCtns: 0, nazNetWt: 0, jacmeWtPack: grams, jacmePackets: pkts, lineTotalUSD: parseFloat(lineUsd.toFixed(2)), targetGp: 0.15, sellPrice: 0 });
+                        }
+                    }
+                    if (!parsed.length) throw new Error('Could not parse items.');
+                    this.items = parsed; this.parseMessage = `Extracted ${parsed.length} items.`;
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
