@@ -905,17 +905,18 @@
                         return { binary, cropW, cropH, gridXs, rowBounds };
                     },
 
-                    buildColumnStripCanvas(gridData, colIdx) {
+                    buildChunkStripCanvas(gridData, colIdx, startRow, endRow) {
                         const { binary, cropW, gridXs, rowBounds } = gridData;
                         const x0 = gridXs[colIdx] + 4;
                         const x1 = gridXs[colIdx + 1] - 4;
                         const cellW = Math.max(10, x1 - x0);
+                        const count = endRow - startRow;
 
                         const scale = 2.6;
-                        const slotH = 88;
+                        const slotH = 72;
                         const padLeft = 32;
                         const stripW = Math.round(cellW * scale) + padLeft * 2;
-                        const stripH = rowBounds.length * slotH;
+                        const stripH = count * slotH;
 
                         const canvas = document.createElement('canvas');
                         canvas.width = stripW;
@@ -926,23 +927,28 @@
                         ctx.imageSmoothingEnabled = true;
                         ctx.imageSmoothingQuality = 'high';
 
-                        // Offscreen cell canvas for smooth anti-aliased scaling (avoids jagged stair-step digits)
                         const cellCanvas = document.createElement('canvas');
                         cellCanvas.width = cellW;
                         cellCanvas.height = 40;
                         const cellCtx = cellCanvas.getContext('2d');
 
-                        for (let r = 0; r < rowBounds.length; r++) {
+                        const hasInk = new Array(count).fill(false);
+
+                        for (let i = 0; i < count; i++) {
+                            const r = startRow + i;
                             const y0 = rowBounds[r].y0 + 3;
                             const y1 = rowBounds[r].y1 - 3;
                             const cellH = Math.max(1, y1 - y0);
                             if (cellCanvas.height < cellH) cellCanvas.height = cellH;
 
+                            let inkPixels = 0;
                             const cellImg = cellCtx.createImageData(cellW, cellH);
                             const cd = cellImg.data;
                             for (let sy = 0; sy < cellH; sy++) {
                                 for (let sx = 0; sx < cellW; sx++) {
-                                    const val = binary[(y0 + sy) * cropW + (x0 + sx)] ? 0 : 255;
+                                    const bit = binary[(y0 + sy) * cropW + (x0 + sx)];
+                                    inkPixels += bit;
+                                    const val = bit ? 0 : 255;
                                     const p = (sy * cellW + sx) * 4;
                                     cd[p] = val;
                                     cd[p + 1] = val;
@@ -950,41 +956,57 @@
                                     cd[p + 3] = 255;
                                 }
                             }
-                            cellCtx.putImageData(cellImg, 0, 0);
-
-                            const destW = Math.round(cellW * scale);
-                            const destH = Math.round(cellH * scale);
-                            const destTop = r * slotH + Math.max(6, Math.floor((slotH - destH) / 2));
-                            ctx.drawImage(cellCanvas, 0, 0, cellW, cellH, padLeft, destTop, destW, destH);
+                            if (inkPixels >= 10) {
+                                hasInk[i] = true;
+                                cellCtx.putImageData(cellImg, 0, 0);
+                                const destW = Math.round(cellW * scale);
+                                const destH = Math.round(cellH * scale);
+                                const destTop = i * slotH + Math.max(5, Math.floor((slotH - destH) / 2));
+                                ctx.drawImage(cellCanvas, 0, 0, cellW, cellH, padLeft, destTop, destW, destH);
+                            }
                         }
 
-                        return { canvas, slotH };
+                        return { canvas, slotH, hasInk };
                     },
 
                     async recognizeColumnStrip(worker, gridData, colIdx, whitelist) {
-                        const { canvas, slotH } = this.buildColumnStripCanvas(gridData, colIdx);
+                        const totalRows = gridData.rowBounds.length;
+                        const chunkSize = 11; // 11 * 72px = 792px tall (never triggers Tesseract downscaling)
+                        const allTexts = new Array(totalRows).fill('');
+
                         await worker.setParameters({
                             tessedit_pageseg_mode: '6',
                             tessedit_char_whitelist: whitelist
                         });
-                        const res = await worker.recognize(canvas);
-                        const rowTexts = Array.from({ length: gridData.rowBounds.length }, () => []);
 
-                        if (res.data && Array.isArray(res.data.words)) {
-                            for (const w of res.data.words) {
-                                const txt = (w.text || '').trim();
-                                if (!txt) continue;
-                                const yMid = (w.bbox.y0 + w.bbox.y1) / 2;
-                                const rIdx = Math.floor(yMid / slotH);
-                                if (rIdx >= 0 && rIdx < rowTexts.length) {
-                                    rowTexts[rIdx].push({ x: w.bbox.x0, text: txt });
+                        for (let startRow = 0; startRow < totalRows; startRow += chunkSize) {
+                            const endRow = Math.min(totalRows, startRow + chunkSize);
+                            const { canvas, slotH, hasInk } = this.buildChunkStripCanvas(gridData, colIdx, startRow, endRow);
+                            if (!hasInk.some(Boolean)) continue;
+
+                            const res = await worker.recognize(canvas);
+                            const chunkBuckets = Array.from({ length: endRow - startRow }, () => []);
+
+                            if (res.data && Array.isArray(res.data.words)) {
+                                for (const w of res.data.words) {
+                                    const txt = (w.text || '').trim();
+                                    if (!txt) continue;
+                                    const yMid = (w.bbox.y0 + w.bbox.y1) / 2;
+                                    const localIdx = Math.floor(yMid / slotH);
+                                    if (localIdx >= 0 && localIdx < chunkBuckets.length && hasInk[localIdx]) {
+                                        chunkBuckets[localIdx].push({ x: w.bbox.x0, text: txt });
+                                    }
                                 }
                             }
+
+                            for (let i = 0; i < chunkBuckets.length; i++) {
+                                if (!hasInk[i]) continue;
+                                chunkBuckets[i].sort((a, b) => a.x - b.x);
+                                allTexts[startRow + i] = chunkBuckets[i].map(item => item.text).join(' ').trim();
+                            }
                         }
-                        return rowTexts.map(arr => {
-                            arr.sort((a, b) => a.x - b.x);
-                            return arr.map(item => item.text).join(' ').trim();
-                        });
+
+                        return allTexts;
                     },
 
                     // --- 2 & 3. UNIFIED PDF ROUTER ---
@@ -1112,7 +1134,6 @@
                             const fobOffer = this.parseCleanPrice(colResults[6][r]);
                             const unitUsd = fobOffer > 0 ? fobOffer : (fobStd > 0 ? parseFloat((fobStd / 1.1).toFixed(2)) : 0);
 
-                            // Clean thousands-dots (e.g. "$2.036.36" -> 2036.36) and trailing '$'
                             let rawTot = (colResults[8][r] || '').replace(/,/g, '').replace(/\$+$/, '').replace(/^\$+/, '').trim();
                             const totDots = (rawTot.match(/\./g) || []).length;
                             if (totDots > 1) {
@@ -1124,7 +1145,6 @@
 
                             if (wtPackG === 0 && packCtn === 0 && ctns === 0 && pkts === 0 && totalUsd === 0) continue;
 
-                            // Cross-check Wt/Pack against explicit "1Kg" / "2Kg" in name & guard against duplicated leading digit (e.g. "4400" -> 400)
                             if (/1\s*kg/i.test(name)) wtPackG = 1000;
                             else if (/2\s*kg/i.test(name)) wtPackG = 2000;
                             else if (wtPackG >= 3000 && !/[3-9]\s*kg/i.test(name)) {
@@ -1132,7 +1152,6 @@
                                 if (mod >= 100 && mod <= 950) wtPackG = mod;
                             }
 
-                            // Algebraic check 1: Pack/Carton * No of Cartons == No. Packets
                             if (packCtn > 0 && ctns > 0) {
                                 const prod = packCtn * ctns;
                                 if (pkts !== prod) {
@@ -1148,7 +1167,6 @@
                                 packCtn = Math.round(pkts / ctns);
                             }
 
-                            // Algebraic check 2: Verify Total USD against Packets * Unit Price to strip any '$' misread as leading digits
                             if (pkts > 0 && unitUsd > 0) {
                                 const expectedUsd = pkts * unitUsd;
                                 if (totalUsd <= 0 || Math.abs(totalUsd - expectedUsd) > Math.max(4, expectedUsd * 0.05)) {
